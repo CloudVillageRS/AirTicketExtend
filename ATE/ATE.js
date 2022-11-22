@@ -774,8 +774,8 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
             return this._health
         }
         set health(val) {
-            if (val > data.maxHealth) {
-                val = data.maxHealth
+            if (val > data[this.chapter].maxHealth) {
+                val = data[this.chapter].maxHealth
             } else if (val <= 0) {
                 this.die()
             }

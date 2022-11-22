@@ -576,7 +576,7 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
             this.chooseChapter()
         }
         chooseChapter() {
-            var $chapters = $("<div/>").appendTo(this.$interface)
+            var $chapters = $("<div/>").addClass("ate-chapters").appendTo(this.$interface)
             for (let i = 1; i <= 5; i++) {
                 let $chapter = $("<div/>").addClass("ate-chapter").appendTo($chapters)
                 if (data[i]) {
@@ -709,8 +709,8 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
             return this._health
         }
         set health(val) {
-            if (val > data.maxHealth) {
-                val = data.maxHealth
+            if (val > data[this.chapter].maxHealth) {
+                val = data[this.chapter].maxHealth
             } else if (val <= 0) {
                 this.die()
             }
