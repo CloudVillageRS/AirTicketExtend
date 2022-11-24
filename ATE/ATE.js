@@ -225,17 +225,25 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
         }
         round() {
             this.log("回合" + (this.rounds + 1))
-            if (this.enemy.id === 7 && this.rounds % 10 === 9) { // CRD
-                
-                this.log("CRD：“什么？！你们居然还能挺得住，看来我要动用增援了！”")
-                this.wait(() => {
-                    this.log("第一个长矛向你袭来")
-                    return this.game.battle(8, this)
-                })
-                this.wait(() => {
-                    this.log("第二个长矛向你袭来")
-                    return this.game.battle(8, this)
-                })
+            switch (this.enemy.id) {
+                case 7:
+                    if (this.rounds % 10 === 9) { // CRD
+                        
+                        this.log("CRD：“什么？！你们居然还能挺得住，看来我要动用增援了！”")
+                        this.wait(() => {
+                            this.log("第一个长矛向你袭来")
+                            return this.game.battle(8, this)
+                        })
+                        this.wait(() => {
+                            this.log("第二个长矛向你袭来")
+                            return this.game.battle(8, this)
+                        })
+                    }
+                    break;
+                case 8:
+                    if (this.rounds === 10) {
+                        this.achieve(2)
+                    }
             }
             this.rounds++
             this.roundEndCallback = []

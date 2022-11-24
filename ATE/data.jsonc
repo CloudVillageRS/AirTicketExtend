@@ -1989,7 +1989,7 @@
             "health": 160,
             "attack": 10,
             "defenseRate": 0.05,
-            "defense": 30,
+            "defence": 30,
             "id": 6
         },
         "7": {
@@ -2033,6 +2033,10 @@
         "1": {
             "name": "毫发无伤",
             "description": "以满血状态战胜CRD"
+        },
+        "2": {
+            "name": "《论持久战》",
+            "description": "和短矛僵持10回合"
         }
     }
 }
