@@ -18,6 +18,7 @@ html, body {
 	height: 10em;
 	overflow: scroll;
 	cursor: pointer;
+	box-sizing: border-box;
 }
 
 .ate-equipments {
@@ -62,7 +63,7 @@ html, body {
 }
 
 .ate-choice {
-	min-width: 8em;
+	width: 8em;
 	font-size: 120%;
 	padding: 1em;
 	float: left;
@@ -265,4 +266,23 @@ html, body {
 
 #author a:hover {
 	opacity: 70%;
+}
+
+@media only screen and (orientation: landscape) and (max-height: 600px) {
+	.ate-choice {
+		font-size: 100%;
+		float: none;
+		width: 7em;
+		padding: 0.25em;
+	}
+	.ate-choices {
+		display: inline-block;
+	}
+	.ate-messages {
+		width: calc(100% - 10em);
+		display: inline-block;
+	}
+	.ate-battle {
+		display: inline-block;
+	}
 }
