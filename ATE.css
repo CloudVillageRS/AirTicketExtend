@@ -35,8 +35,8 @@ html, body {
 .ate-item, .ate-equipments > div {
 	background-color: silver;
 	border: 1px solid black;
-	height: 6em;
-	width: 6em;
+	height: 4em;
+	width: 4em;
 	box-sizing: border-box;
     text-align: center;
     color: aqua;
@@ -52,7 +52,7 @@ html, body {
 .ate-item-description > div {
 	position: absolute;
 	z-index: 100;
-    width:8em;
+    width: 8em;
     background-color: #f8f9fa;
     color: black;
     display: none;
