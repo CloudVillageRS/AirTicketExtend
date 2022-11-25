@@ -14,7 +14,7 @@ html, body {
 }
 
 .ate-messages {
-	padding: 1em;
+	padding: 1.5em;
 	height: 10em;
 	overflow: scroll;
 	cursor: pointer;
@@ -248,4 +248,21 @@ html, body {
 
 .ate-enter > div {
 	font-size: 0.2em;
+}
+
+#author {
+	position: absolute;
+	right: 4px;
+	top: 4px;
+	z-index: 114514;
+	opacity: 50%;
+}
+
+#author a {
+	color: black;
+	transition: .5s ease-in opacity;
+}
+
+#author a:hover {
+	opacity: 70%;
 }
