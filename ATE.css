@@ -30,7 +30,7 @@ html, body {
 	border: 0.2em black solid;
 	box-sizing: border-box;
 	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(6.2em, 1fr));
+	grid-template-columns: repeat(auto-fit, minmax(4.2em, 1fr));
 }
 
 .ate-item, .ate-equipments > div {
@@ -274,6 +274,9 @@ html, body {
 	}
 	.ate-interface.battling .ate-messages, .ate-interface.battling .ate-battle {
 		width: calc(50% - 5em)
+	}
+	.ate-item {
+		height: 15%;
 	}
 	/*
 	.ate-items {
