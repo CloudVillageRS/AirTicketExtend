@@ -269,6 +269,19 @@ html, body {
 }
 
 @media only screen and (orientation: landscape) and (max-height: 600px) {
+	.ate-messages, .ate-battle {
+		transition: 0.5s ease-in-out width;
+	}
+	.ate-interface.battling .ate-messages, .ate-interface.battling .ate-battle {
+		width: calc(50% - 5em)
+	}
+	/*
+	.ate-items {
+		position: absolute;
+		right: 0;
+		top: 0;
+	}
+	*/
 	.ate-choice {
 		font-size: 100%;
 		float: none;
@@ -276,13 +289,21 @@ html, body {
 		padding: 0.25em;
 	}
 	.ate-choices {
-		display: inline-block;
+		position: absolute;
+		width: 8em;
+		right: 0;
+		bottom: 0;
 	}
 	.ate-messages {
 		width: calc(100% - 10em);
-		display: inline-block;
+		position: absolute;
+		bottom: 0;
 	}
 	.ate-battle {
-		display: inline-block;
+		position: absolute;
+		right: 10em;
+		width: 0;
+		bottom: 0;
+		overflow-x: auto;
 	}
 }
