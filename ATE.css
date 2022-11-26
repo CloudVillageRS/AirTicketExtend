@@ -269,14 +269,15 @@ html, body {
 }
 
 @media only screen and (orientation: landscape) and (max-height: 600px) {
+	.ate-info {
+		display: inline-table;
+		vertical-align: middle;
+	}
 	.ate-messages, .ate-battle {
 		transition: 0.5s ease-in-out width;
 	}
 	.ate-interface.battling .ate-messages, .ate-interface.battling .ate-battle {
 		width: calc(50% - 5em)
-	}
-	.ate-item {
-		height: 15%;
 	}
 	/*
 	.ate-items {
