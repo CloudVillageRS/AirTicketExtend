@@ -1925,8 +1925,8 @@
             "win": ["cm + 100"] // 水晶战无星空
         }
     },
-    "enemy": {
-        "0": {
+    "enemy": [
+        {
             "name": "训练木马",
             "health": 60,
             "attack": 5,
@@ -1934,7 +1934,7 @@
             "defenseRate": 0,
             "id": 0
         },
-        "1": {
+        {
             "name": "CRD",
             "health": 150,
             "attack": 10,
@@ -1942,7 +1942,7 @@
             "defenseRate": 0.3,
             "id": 1
         },
-        "2": {
+        {
             "name": "几何六面体",
             "health": 70,
             "defenseRate": 0.1,
@@ -1955,7 +1955,7 @@
             },
             "id": 2
         },
-        "3": {
+        {
             "name": "圆柱",
             "health": 100,
             "defenseRate": 0.3,
@@ -1963,7 +1963,7 @@
             "attack": 5,
             "id": 3
         },
-        "4": {
+        {
             "name": "长矛",
             "health": 150,
             "defenseRate": 0.1,
@@ -1971,7 +1971,7 @@
             "attack": 15,
             "id": 4
         },
-        "5": {
+        {
             "name": "滚轮",
             "health": 150,
             "defence": 30,
@@ -1984,7 +1984,7 @@
             },
             "id": 5
         },
-        "6": {
+        {
             "name": "四面体",
             "health": 160,
             "attack": 10,
@@ -1992,7 +1992,7 @@
             "defence": 30,
             "id": 6
         },
-        "7": {
+        {
             "name": "CRD",
             "health": 360,
             "attack": 15,
@@ -2000,7 +2000,7 @@
             "defenseRate": 0.05,
             "id": 7
         },
-        "8": {
+        {
             "name": "短矛",
             "health": 50,
             "attack": 5,
@@ -2008,7 +2008,7 @@
             "defenseRate": 0.1,
             "id": 8
         },
-        "9": {
+        {
             "name": "水晶",
             "health": 120,
             "attack": 5,
@@ -2016,7 +2016,7 @@
             "defence": 20,
             "id": 9
         }
-    },
+    ],
     "shop": {
         "0": {
             "6": 10,
@@ -2025,18 +2025,21 @@
             "11": [100, "!i11&!a11"]
         }
     },
-    "achievement": {
-        "0": {
+    "achievement": [
+        {
             "name": "最后一根稻草",
-            "description": "因喝柠檬汁而死"
+            "description": "因喝柠檬汁而死",
+            "id": 1
         },
-        "1": {
+        {
             "name": "毫发无伤",
-            "description": "以满血状态战胜CRD"
+            "description": "以满血状态战胜CRD",
+            "id": 2
         },
-        "2": {
+        {
             "name": "《论持久战》",
-            "description": "和短矛僵持10回合"
+            "description": "和短矛僵持10回合",
+            "id": 3
         }
-    }
+    ]
 }

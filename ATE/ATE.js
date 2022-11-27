@@ -5,7 +5,68 @@
 /** #nosolo */
 $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=raw&ctype=text/json").done(ateData=>{
 /** #endnosolo */
-(function ($, data, version) {
+
+
+
+/** 
+ * 
+ * @typedef {() => (JQuery.Promise|void)} WaitFn
+ * @typedef {{
+ *     name: string;
+ *     attack: number;
+ *     health: number;
+ *     defence: number;
+ *     defenseRate: number;
+ *     random: number;
+ *     id: number;
+ *     message: Object<number, string>
+ * }} EnemyData
+ * @typedef {{
+ *     name: string;
+ *     description: string;
+ *     battle?: boolean;
+ *     id: number;
+ *     stackable?: boolean;
+ *     attack?: number;
+ *     defence?: number;
+ *     use?: string[];
+ * }} ItemData
+ * 
+ * @typedef {string|number} Condition
+ * @typedef {[number, Condition, number|void]|number} StoryTo
+ * @typedef {StoryTo[]} StoryToes
+ * @typedef {string|[string, Condition, string|void]} Choice
+ * @typedef {{
+ *     message: Array<string|[string, Condition, string|void]>;
+ *     battle: string | number;
+ *     choice: Choice[];
+ *     to: StoryTo|StoryToes;
+ *     fadeChoice: number[];
+ * }} Story
+ * @typedef {{
+ *     name: string;
+ *     description: string;
+ *     id: number
+ * }} Achievement
+ * @typedef {{
+ *     items: Array<ItemData>;
+ *     battle: Object<number|string, {
+ *         enemy: number;
+ *         win?: string[];
+ *         withXk?: boolean;
+ *     }>;
+ *     enemy: Array<EnemyData>;
+ *     achievement: Achievement;
+ *     shop: Object<
+ *         number,
+ *         Object<number, number|[number, Condition, number|void]>
+ *     >;
+ *     1: Array<Story | [Story, Condition, Story]>
+ * }} GameData
+ */
+(function ($, /** @type {GameData} */data, version) {
+    /** @typedef {Process|Game|Battle} P */
+    /** @typedef {P|void} CBP */
     class Queue {
         /**
          * 队列，只在游戏初始化时实例化
@@ -14,12 +75,12 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
         constructor(game) {
             this.arrays = {}
             this.indexes = {}
-            Queue.owners = []
             Queue.newid(game)
             this.give(game)
         }
         /**
-         * @param {() => void | JQuery.Promise<any, any, any>} fn
+         * @param {WaitFn} fn
+         * @param {P} cur
          */
         push(fn, cur) {
             if (cur.dead || !(this.arrays[cur.id])) {
@@ -64,7 +125,7 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
         }
         /**
          * 
-         * @param {Game|Battle|Process} process 
+         * @param {P} process 
          */
         give(process) {
             /** @type {number} */
@@ -78,20 +139,26 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
         }
         /**
          * 
-         * @param {Game|Battle|Process} obj 
+         * @param {P} obj 
          */
         static newid(obj) {
-            if (Queue.curid === undefined) {
-                Queue.curid = 0
-            }
             Queue.owners.push(obj)
             obj.id = Queue.curid
             Queue.curid++
         }
+        /**
+         * 
+         * @returns 
+         */
         now() {
             return Queue.owners[this.owner]
         }
     }
+    /**
+     * @type {P[]}
+     */
+    Queue.owners = []
+    Queue.curid = 0
     class Process {
         /**
          * 
@@ -100,6 +167,7 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
          */
         constructor(func, game) {
             if (!game) throw Error("Missing argument game")
+            this.id = -1
             Queue.newid(this)
             this.func = func
             this.dead = false
@@ -109,18 +177,38 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
             this.game.queue.give(this)
             this.func(this)
         }
+        /**
+         * @param {string} msg
+         */
         log(msg) {
             this.wait(() => this.game._log(msg))
         }
+        /**
+         * @param {WaitFn} fn
+         */
         wait(fn) {
             this.game.queue.push(fn, this)
         }
+        /**
+         * @param {any[]} choices
+         * @param {{ (magic: any): void; (i: any): void; (ch: any): void; (ch: any): void; (choice: number): void; }} callback
+         */
         choose(choices, callback) {
             this.wait(() => this.game._choose(choices, callback))
         }
+        /**
+         * 
+         * @param {CBP} after
+         */
         die(after) {
             this.dead = true
             if (after) this.game.queue.give(after)
+        }
+        /**
+         * @param {CBP} after
+         */
+        waitDie(after) {
+            this.wait(() => this.die(after))
         }
     }
     class Battle {
@@ -132,6 +220,7 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
          */
         constructor(battleData, game, callback) {
             console.log(this)
+            this.id = -1
             Queue.newid(this)
             game.queue.give(this)
             this.game = game
@@ -162,6 +251,7 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
             var $tbody1 = $("<tbody/>").appendTo($table1)
             var $tr1 = $("<tr/>").appendTo($tbody1)
             this.$self.animate({marginTop: "6em"})
+            this.game.$interface.addClass("battling")
 
             $("<th/>").html("Zero").appendTo($tr1)
             $("<td/>").html("魔法值").appendTo($tr1)
@@ -169,10 +259,6 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
             this.$magicRate = $("<div/>").addClass("ate-info-rate").css({backgroundColor: "purple", height: "0"}).insertAfter(this.$magic)
             this.magic = 0
             this.rounds = 0
-
-            if (this.enemy.id === 4) {
-                this.special = 0
-            }
         }
         win() {
             if (this.won) {
@@ -186,6 +272,7 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
                 }
             }
             this.$self.animate({marginTop: "0"}, 2000, () => {
+                this.game.$interface.removeClass("battling")
                 this.$enemy.remove()
                 this.$self.remove()
             })
@@ -195,9 +282,15 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
                 this.dead = true
             })
         }
+        /**
+         * @param {string} msg
+         */
         log(msg) {
             this.wait(() => this.game._log(msg))
         }
+        /**
+         * @param {number|WaitFn} fn
+         */
         wait(fn) {
             if (typeof fn === "function") {
                 this.game.queue.push(fn, this)
@@ -209,11 +302,19 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
                 }, this)
             }
         }
+        /**
+         * 
+         * @param {string[]} choices 
+         * @param {(ch: number) => void} callback 
+         */
         choose(choices, callback) {
             this.wait(() => this.game._choose(choices, callback))
         }
         run() {
             if (this.tutorial) {
+            	/**
+                 * @type {any[]}
+                 */
             	this.roundEndCallback = []
                 this.log("星空说：“让我描述详细一点吧，在魔法系统下，战斗就是我们的【魔法核心】相互接触的过程，每个人都有一个【魔法核心】，只不过大多数人都不会用罢了，我来教你怎么使用。")
                 this.log("星空跟你详细说明了使用魔法核心的方法，你试了一下，突然你感觉世界一下就改变了！")
@@ -242,10 +343,13 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
                     break;
                 case 8:
                     if (this.rounds === 10) {
-                        this.achieve(2)
+                        this.game.achieve(2)
                     }
             }
             this.rounds++
+            /**
+             * @type {any[]}
+             */
             this.roundEndCallback = []
             if (this.enemy.message) {
                 let r = 1 + Math.round(Math.random() * this.enemy.random)
@@ -282,23 +386,30 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
             } else {
                 switch (ch) {
                     case 0:
-                        let found = false
+                        /** @type {number[]} */
+                        let battlable = []
                         for (let index in this.game.items) {
                             let item = this.game.items[index]
                             let itemData = data.items[item]
                             if (itemData.battle === true) {
-                                found = true
-                                this.game.$items.eq(parseInt(index)).on("click", () => {
-                                    this.game.use(this.game.items.indexOf(item), this)
-                                    this.game.$items.children().off("click")
-                                })
+                                battlable.push(parseInt(index))
                             }
                         }
-                        if (!found) {
+                        if (battlable.length === 0) {
                             this.log("你没有可用的物品。")
                             return this.prepareChoose()
                         }
                         this.log("选择一项物品。")
+                        this.game.waitProcess(this, (p) => {
+                            for (let index of battlable) {
+                                // console.log(index, this.game.$items.eq(parseInt(index)))
+                                this.game.$items.children().eq(index).css("boxShadow", "2px 2px 4px 4px #66ccff").on("click", () => {
+                                    this.game.use(index, this)
+                                    this.game.$items.children().css("boxShadow", "").off("click")
+                                    p.waitDie(this)
+                                })
+                            }
+                        })
                         break;
                     case 1:
                         this.log("你选择了防御。")
@@ -319,13 +430,12 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
                         var ok = false
                         const chooseMagic = () => 
                         this.game.Process((proc) => {
-                            proc.choose(magics, (magic) => {
+                            proc.choose(magics, (/** @type {any} */ magic) => {
                                 this.game.Process((process) => {
                                     switch (magic) {
                                         case 0:
                                             if (this.magic < this.cureMagicCost) {
                                                 process.log("你的魔法值不够！")
-                                                process.wait(500)
                                                 return
                                             }
                                             process.log(`你选择了治疗魔法，HP恢复${this.cureMagicPlus}`)
@@ -335,7 +445,6 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
                                         case 1:
                                             if (this.magic < 70) {
                                                 process.log("你的魔法值不够！")
-                                                process.wait(500)
                                                 return
                                             }
                                             process.log(`你选择了战斗魔法，Att提高5，持续一回合。`)
@@ -354,7 +463,6 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
                                                 this.enemy.health = 0
                                             } else {
                                                 process.log("l͓̩̫̘͙͔̯͖̟̤̓͊̑̌́̂̆̚ò̥̪̭̱̰̝̒͂̄͋̿̏͆́̚c͍̲͇͚̖̬͈̪͙̳͌̉́̃k̪̥̱̝̱̑̈́̏̽͗̊̈́͂̀̍e̞͎̩̜̱̩͚̤̊͌̀̀d̠̖̞̝̙̪̟̞̐͛̈̊̀͂̄͌̓̏͌̓ͅ")
-                                                process.wait(500)
                                                 return
                                             }
                                             break;
@@ -426,6 +534,7 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
          * @param {boolean} defense 己方防御
          * @param {Game} game
          * @param {Battle} [self] 若为dodge则不适用
+         * @returns {[number, string, number]}
          */
         static computeHurtHarm(str, baseThis, baseEnemy, defense, game, self) {
             if (baseThis < 0) {
@@ -436,11 +545,8 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
             }
             var same; // 拉低复用性，差评！
             if (self && self.enemy.id === 4) {
-                if (self.special === 3) {
+                if (self.rounds % 4 === 3) {
                     same = Math.floor(Math.random() * 4)
-                    self.special = 0
-                } else {
-                    self.special++
                 }
             }
             let hurt = 0, harm = 0, letters = ""
@@ -526,7 +632,7 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
                 let [hurt, letters, harm] = Battle.computeHurtHarm(str,
                     this.defense ? 0 : (this.game.attack - enemyDefence),
                     this.enemy.attack - (this.defense ? this.game.defence : 0),
-                    this.defense, this.game)
+                    this.defense, this.game, this)
                 this.log(`你的攻击是${str}，对方的攻击是${letters}`)
                 if (enemyDefense) {
                     this.log(`${this.enemy.name}选择了防御。`)
@@ -562,6 +668,9 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
             this.$magic.html(val)
             this.$magicRate.css("height", val + "%")
         }
+        /**
+         * @param {() => void} fn
+         */
         roundEnd(fn) {
             this.roundEndCallback.push(fn)
         }
@@ -571,7 +680,7 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
     }
     class Enemy {
         /**
-         * @param {{ name: string; health: number; attack: number; defence: number; defenseRate: number; }} enemyData
+         * @param {EnemyData} enemyData
          * @param {Battle} battle
          */
         constructor(enemyData, battle) {
@@ -601,6 +710,7 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
     }
     class Game {
         constructor() {
+            this.id = -1
             this.$interface = $(".ate-interface")
             this.$settings = Game.button().html("设置").on("click", () => this.settingsMenu()).appendTo(this.$interface)
             var $enter = $("<div/>").addClass("ate-enter").html("Air Ticket Extend<div>Click to start</div>").prependTo(this.$interface).one("click", () => {
@@ -610,6 +720,9 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
             })
             var $white = $("<div/>").addClass("ate-white").prependTo(this.$interface)
             var $sw0rd = $("<div/>").addClass("ate-sw0rd").prependTo(this.$interface).hide().fadeIn(1000)
+            $sw0rd.on("click", () => {
+                location.href = "https://wiki.cvserver.top"
+            })
             setTimeout(() => {
                 $white.remove()
                 $sw0rd.fadeOut(1000)
@@ -624,6 +737,7 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
                 }, {async: false})
                 .done((responce) => {
                     var html = responce.parse.text
+                    /** @type {string[]} */
                     this.itemImages = []
                     var itemImages = $(html).find("img")
                     itemImages.each((_, ele) => {
@@ -683,7 +797,7 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
                 $("<div/>").addClass("ate-item").appendTo(this.$items)
             }
             this.queue = new Queue(this)
-
+            this.dead = false
         	this.attack = 15
             this.defence = 0
             var localStorage = window.localStorage
@@ -698,7 +812,7 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
                 this.weapon = this.store.weapon
                 this.armor = this.store.armor
                 this.cm = this.store.cm
-                this.stackables = this.store.stackables || {}
+                this.stackables = this.store.stackables
             } else {
                 this.store = {}
                 this.health = data[this.chapter].maxHealth
@@ -713,6 +827,11 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
                 this.items = []
                 this.stackables = {}
             }
+            for (let each of data.items) {
+                if (each.stackable && !(each.id in this.stackables)) {
+                    this.stackables[each.id] = 0
+                }
+            }
             this.R = Math.round(Math.random() * 100) + 1
             /**
              * @type {string[]}
@@ -721,6 +840,9 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
             
             this.exp(this.experience.length ? this.experience.pop() : 0)
         }
+        /**
+         * @param {string} msg
+         */
         _log(msg) {
             var $msg = $("<span/>").html(msg).css("display", "none"), deferred = $.Deferred()
             $msg.css({
@@ -730,7 +852,7 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
             this.$message.append($msg).append("<br>")
             $msg.fadeIn(this.settings.speed, () => deferred.resolve())
             this.history.push(msg)
-            return deferred.promise()
+            return deferred
         }
         /**
          * 
@@ -744,6 +866,9 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
             $.each(this.items, (_, id) => a.push(data.items[id].name) )
             return a
         }
+        /**
+         * @param {number} item
+         */
         putOn(item) {
             if (data.items[item].attack || data.items[item].id === 24) { // 零剑
                 this.weapon = item
@@ -856,19 +981,20 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
          * 
          * @param {number} item 
          * @param {number} [amount]
+         * @param {P} [process]
          */
         add(item, amount, process) {
             var itemData = data.items[item]
             var amount = amount || 1
             process = process || this
             
-            const add = stackable => {
+            const add = (/** @type {boolean} */ stackable) => {
                 if (this.items.length === this.max) {
                     var items = this.showItems()
                     items.push("放弃拾取")
                     this.waitProcess(process, p => {
                         p.log("已满，请丢弃一项")
-                        p.choose(items, i => {
+                        p.choose(items, (/** @type {number} */ i) => {
                             if (i === this.max) {
                                 return p.die(this)
                             }
@@ -876,7 +1002,7 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
                             this.items.splice(i, 1)
                             this.items.push(item)
                             if (stackable) {
-                                this.stackables[item] += amount
+                                this.setStackableAmount(item, this.stackables[item] + amount)
                             }
                             this._add(item)
                             p.die(process)
@@ -887,7 +1013,7 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
                         p.log(`已将${itemData.name}加入您的背包。`)
                         this.items.push(item)
                         if (stackable) {
-                            this.stackables[item] += amount
+                            this.setStackableAmount(item, this.stackables[item] + amount)
                         }
                         this._add(item)
                         p.wait(() =>p.die(process))
@@ -895,13 +1021,10 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
                 }
             }
             if (itemData.stackable) {
-                if (!(item in this.stackables)) {
-                    this.stackables[item] = 0
-                }
                 if (this.stackables[item] === 0) {
                     add(true)
                 } else {
-                    this.stackables[item] += amount
+                    this.setStackableAmount(item, this.stackables[item] + amount)
                 }
             } else {
                 add(false)
@@ -929,15 +1052,36 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
         	$item.append(itemData.name)
         	var $des = $("<span/>").addClass("ate-item-description").appendTo($item)
             var $desDiv = $("<div/>").html(itemData.description).appendTo($des)
+            if (itemData.stackable) {
+                $desDiv.append(`<br>你有<span class="ate-item-amount">${this.stackables[item]}</span>个`)
+            }
             if ("attack" in itemData || "defence" in itemData || item === 24) {
                 var $button = Game.button().html("装备").appendTo($desDiv)
                 $button.on("click", () => {
                     this.putOn(item)
                 })
             }
+            var pos = this.items.length - 1
             Game.button().html("丢弃").appendTo($desDiv).on("click", () => {
-                this.remove(this.items.length - 1, this.queue.now())
+                if (itemData.stackable) {
+                    this.removeItem(item, this.queue.now())
+                } else {
+                    this.remove(pos, this.queue.now())
+                }
             })
+        }
+        /**
+         * @param {number} item
+         * @param {number} amount
+         */
+        setStackableAmount(item, amount) {
+            if (this.stackables[item] !== 0 && amount !== 0) {
+                this.$items.eq(this.items.indexOf(item)).find(".ate-item-amount").html(amount)
+            }
+            this.stackables[item] = amount
+            if (amount === 0) {
+                this._removeItem(item)
+            }
         }
         /**
          * @param {number} item
@@ -947,8 +1091,10 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
         }
         /**
          * @param {number} index
+         * @param {P} [process]
          */
         remove(index, process) {
+            var item = this.items[index]
             process = process || this
             process.wait( () => this._remove(index) )
             return this.items.splice(index, 1)[0]
@@ -958,14 +1104,24 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
          * @param {number} index 
          */
         _remove(index) {
-        	var clear = this.$items.children().eq(-1).remove()
             var $items = this.$items.children()
             $items.eq(index).html("").css("backgroundImage", "").appendTo(this.$items) // 因为这里写成$items导致了大问题
-            clear.appendTo(this.$items)
         }
-        removeItem(item) {
-            return this.remove(this.items.indexOf(item))
+        /**
+         * 
+         * @param {number} item 
+         * @param {P} [process] 
+         * @returns 
+         */
+        removeItem(item, process) {
+            if (data.items[item].stackable) {
+                return this.setStackableAmount(item, 0)
+            }
+            return this.remove(this.items.indexOf(item), process)
         }
+        /**
+         * @param {number} item
+         */
         _removeItem(item) {
             this._remove(this.items.indexOf(item))
         }
@@ -974,11 +1130,16 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
          * @param {Battle} battle
          */
         use(index, battle) {
-            var item = this.remove(index)
-            for (let each of data[item].use) {
+            var item = this.remove(index, battle)
+            var itemData = data.items[item]
+            battle.log(itemData.name)
+            for (let each of itemData.use) {
             	this.execute(each, battle)
             }
         }
+        /**
+         * @param {number} id
+         */
         exp(id) {
         	this.$message.html("")
             this.experience.push(id)
@@ -989,6 +1150,9 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
                 this.story(this.judge(story[1]) ? story[0] : story[2])
             }
         }
+        /**
+         * @param {Story} story
+         */
         story(story) {
             for (let each of story.message) {
                 let msg
@@ -1041,7 +1205,7 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
                     }
                 }, story.fadeChoice)
             } else {
-            	let to = story.to
+            	const to = story.to
                 if (!this.settings.pass) {
                     this.wait(() => {
                         var deferred = $.Deferred()
@@ -1126,7 +1290,7 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
         }
         /**
          * 
-         * @param {number|string} condition 
+         * @param {Condition} condition 
          * @returns {boolean}
          */
         judge(condition) {
@@ -1173,7 +1337,7 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
          * 
          * @param {Array<string>} choices 
          * @param {(choice: number)=>void} callback
-         * @param {number[]} fade
+         * @param {number[]} [fade]
          * @returns {void}
          */
         _choose(choices, callback, fade) {
@@ -1193,9 +1357,9 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
             $choices.append(Game.clear())
         }
         /**
-         * 
-         * @param {Array<string>} choices 
-         * @param {(choice: number)=>void} callback 
+         * @param {Array<string>} choices
+         * @param {(choice: number) => void} callback
+         * @param {number[]} [fade]
          */
         choose(choices, callback, fade) {
         	this.wait(() => this._choose(choices, callback, fade))
@@ -1255,10 +1419,10 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
         dodge(baseEnemy) {
             this.waitProcess(this, p => {
                 const dodge = () => {
-                    /**
-                     * @type {string}
-                     */
                     let str = $input.val()
+                    if (typeof str !== "string") {
+                        throw new Error("Str should be string")
+                    }
                     if (!Battle.check5Capitals(str)) {
                         return;
                     }
@@ -1276,7 +1440,7 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
         }
         bridge() {
             this.log("选择一座桥以通过")
-            const makeBridge = () => this.Process((process) => process.choose(["A", "B", "C"], (ch) => {
+            const makeBridge = () => this.Process((process) => process.choose(["A", "B", "C"], (/** @type {number} */ ch) => {
                 var noBridge = Math.floor(Math.random() * 3)
                 var bridges = ["A", "B", "C"]
                 if (ch === noBridge) {
@@ -1317,7 +1481,7 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
                 }
                 var leaveKey = items.length
                 items.push("离开")
-                p.choose(items, ch => {
+                p.choose(items, (/** @type {number} */ ch) => {
                     if (ch === leaveKey) {
                         return p.die(this)
                     }
@@ -1343,11 +1507,7 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
                 this.log("使用复活爱心吗?")
                 this.choose(["是", "否"], (ch) => {
                     if (!ch) {
-                        if (this.stackables[2] > 1) {
-                            this.stackables[2]--
-                        } else if (this.stackables[2] === 1) {
-                            this.removeItem(2)
-                        }
+                        this.setStackableAmount(2, this.stackables[2] - 1)
                         this.health = 100
                         this.log("那么，你将再次驱散黑暗")
                     } else {
@@ -1373,6 +1533,10 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
         	function getSettings() {
         		settings = localStorage.ateSettings ? JSON.parse(localStorage.ateSettings) : defaultSettings
         	}
+        	/**
+             * @param {string} item
+             * @param {any} val
+             */
         	function setItem(item, val) {
         		settings[item] = val
         		localStorage.ateSettings = JSON.stringify(settings)
@@ -1401,24 +1565,30 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
             var $window = $("<div/>").addClass("ate-settings").appendTo(this.$interface)
             var $cover = $("<div/>").addClass("ate-cover").appendTo(this.$interface)
             var $list = $("<ul/>").appendTo($window)
-            var $speed = $("<input>").attr("type", "text").val(this.settings.speed).appendTo($("<li/>").html("播放速率倒数").appendTo($list))
+            var $speed = $("<input>").attr("type", "text").val(this.settings.speed).appendTo($("<li/>").html("消息播放时间/ms").appendTo($list))
             var $pass = Game.button().html(this.settings.pass ? "是" : "否").appendTo($("<li/>").html("无选项自动跳剧情").appendTo($list))
             $pass.on("click", () => {
                 $pass.html(this.settings.pass ? "否" : "是")
                 this.settings.pass = !this.settings.pass
             })
-            Game.button().html("清档").appendTo($window).on("click", () => {
-                delete localStorage.gameData
-                this.notify("存档已清除！")
-            })
-            $window.append("<div>历史记录：</div>")
-            var $history = $("<ol/>").addClass("ate-history").appendTo($window)
-            for (let each of this.history) {
-                $("<li/>").html(each).appendTo($history)
+            if (this.history) {
+                Game.button().html("清档").appendTo($window).on("click", () => {
+                    delete localStorage.gameData
+                    this.notify("存档已清除！")
+                })
+                $window.append("<div>历史记录：</div>")
+                var $history = $("<ol/>").addClass("ate-history").appendTo($window)
+                for (let each of this.history) {
+                    $("<li/>").html(each).appendTo($history)
+                }
             }
             $("<div/>").addClass("ate-settings-done").appendTo($window).on("click", () => {
-                if ($speed.val().match(/^\d+$/)) {
-                    this.settings.speed = parseInt($speed.val())
+                const VAL = $speed.val()
+                if (typeof VAL !== "string") {
+                    throw new Error("$speed.val() is a str")
+                }
+                if (VAL.match(/^\d+$/)) {
+                    this.settings.speed = parseInt(VAL)
                 }
                 $window.animate({left: "-100%"}, 3000, () => $window.remove())
                 $cover.remove()
@@ -1432,11 +1602,18 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
         static clear() {
             return $("<div/>").css("clear", "both")
         }
+        /**
+         * @param {JQuery<HTMLElement>} $ele
+         * @param {number} id
+         */
         addImage($ele, id) {
             if (id < this.itemImages.length) {
                 $ele.css("backgroundImage", `url(${this.itemImages[id]})`)
             }
         }
+        /**
+         * @param {string | number} id
+         */
         achieve(id) {
             if (this.achievements.includes(id)) return
             var achievement = data.achievement[id]
@@ -1451,10 +1628,16 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
         get achievements() {
             var ach = localStorage.ateAchievements ? JSON.parse(localStorage.ateAchievements) : []
             return {
+                /**
+                 * @param {any} id
+                 */
                 push(id) {
                     ach.push(id)
                     localStorage.ateAchievements = JSON.stringify(ach)
                 },
+                /**
+                 * @param {any} id
+                 */
                 includes(id) {
                     return ach.includes(id)
                 },
@@ -1466,6 +1649,9 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
         static button() {
             return $("<div/>").addClass("ate-button")
         }
+        /**
+         * @param {string | Element | DocumentFragment | Comment | ((this: HTMLElement, index: number, oldhtml: string) => string | JQuery.Node)} msg
+         */
         notify(msg) {
             var $msg = $("<div/>").addClass("ate-notification").appendTo(this.$interface).html(msg)
             $msg.fadeIn(1500)
@@ -1479,10 +1665,18 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
         Process(func) {
             return new Process(func, this)
         }
+        /**
+         * 
+         * @param {Process|Game|Battle} process 
+         * @param {(process:Process)=>void} func 
+         */
         waitProcess(process, func) {
             process.wait(() => this.Process(func).go())
         }
-/** #nolts */
+        /**
+         * #nolts
+         * @param {any} eid
+         */
         skip(eid) {
             if (this.queue.processing) {
                 throw new Error("Still processing")
@@ -1500,20 +1694,16 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
         window.ATEGame = Game
         $.extend(Game, {Queue, Battle, Enemy})
 /** #endnolts */
-/* #ltsonly {
+/* #ltsonly #soloonly {
         var game = new Game()
-        game.run()
 } */
-/* soloonly {
-        var game = new Game()
-        game.run()
-}*/
     	document.title = "游玩 Air Ticket Extend"
     	$("#firstHeading").html(`--- Air Ticket Extend v ${version} ---`)
+        $("#version").html(version)
 /** #nosolo */
     }
 /** #endnosolo */
-})(jQuery, ateData, "2.9.0/** #nolts */ Beta/** #endnolts */")
+})(jQuery, ateData, "2.10.1/** #nolts */ Beta/** #endnolts */")
 
 /** #nosolo */
 })

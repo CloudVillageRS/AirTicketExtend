@@ -11,7 +11,7 @@ def write(file, text):
 tags = ["nosolo", "nolts"]
 
 
-def solo():
+def solo(lts):
     result = []
     curcode = ""
     curcomment = ""
@@ -31,7 +31,7 @@ def solo():
                     result.append(11)
                 elif "#endnolts" in curcomment:
                     result.append(21)
-                elif "#soloonly" in curcomment:
+                elif "#soloonly" in curcomment and (lts or "#ltsonly" not in curcomment):
                     print(curcomment)
                     result.append(re.search("\\{(.+)\\}", curcomment, flags=re.S)[1])
                 curcomment = ""
@@ -71,10 +71,13 @@ def solo():
         if each == 10:
             while result[index] != 11:
                 index += 1
+        elif each == 20 and lts:
+            while result[index] != 21:
+                index += 1
         elif type(each) is str:
             output += each
         index += 1
-    write("ATESolo.js", output)
+    write("ATESolo.js" if lts else "ATEBeta.js", output)
 
 
 
@@ -142,7 +145,8 @@ def lts():
     write("ATELTS.js", output)
 
 def main():
-    solo()
+    solo(False)
+    solo(True)
     lts()
 
 if __name__ == "__main__":
