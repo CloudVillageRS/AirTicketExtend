@@ -1,5 +1,6 @@
+//@ts-check
 "use strict";
-
+//import "./types-ate/index.d.ts"
 
 
 
@@ -8,8 +9,6 @@
 
 
 (function ($, data, version) {
-    
-    
     class Queue {
         
         constructor(game) {
@@ -88,7 +87,7 @@
     class Process {
         
         constructor(func, game) {
-            if (!game) throw Error("Missing argument game")
+            if (!game) throw new Error("Missing param game")
             this.id = -1
             Queue.newid(this)
             this.func = func
@@ -223,7 +222,7 @@
             this.log("回合" + (this.rounds + 1))
             switch (this.enemy.id) {
                 case 7:
-                    if (this.rounds % 10 === 9) { // CRD
+                    if (this.rounds === 9) { // CRD
                         
                         this.log("CRD：“什么？！你们居然还能挺得住，看来我要动用增援了！”")
                         this.wait(() => {
@@ -237,7 +236,7 @@
                     }
                     break;
                 case 8:
-                    if (this.rounds === 10) {
+                    if (this.rounds === 6) {
                         this.game.achieve(2)
                     }
             }
@@ -245,8 +244,8 @@
             
             this.roundEndCallback = []
             if (this.enemy.message) {
-                let r = 1 + Math.round(Math.random() * this.enemy.random)
-                if (this.enemy.message[r]) {
+                let r = Math.floor(Math.random() * (this.enemy.message.length + 1))
+                if (r < this.enemy.message.length) {
                     this.log(this.enemy.message[r])
                 }
             }
@@ -282,7 +281,7 @@
                         for (let index in this.game.items) {
                             let item = this.game.items[index]
                             let itemData = data.items[item]
-                            if (itemData.battle === true) {
+                            if ("battle" in itemData && itemData.battle === true) {
                                 battlable.push(parseInt(index))
                             }
                         }
@@ -312,69 +311,7 @@
                             this.log("你的魔法值不够！")
                             return this.prepareChoose()
                         }
-                        this.log("你选择了魔法。")
-                        this.wait(500)
-                        let magics = [`治疗魔法（${this.cureMagicCost}）`, "战斗魔法（70）", `黑暗魔法（${this.black ? "100" : "？"}）`]
-                        if (this.octahedron) { // 如果 几何八面体 enabled
-                            magics.push("几何八面体（消耗全部魔法值造成一半伤害）")
-                        }
-                        var ok = false
-                        const chooseMagic = () => 
-                        this.game.Process((proc) => {
-                            proc.choose(magics, ( magic) => {
-                                this.game.Process((process) => {
-                                    switch (magic) {
-                                        case 0:
-                                            if (this.magic < this.cureMagicCost) {
-                                                process.log("你的魔法值不够！")
-                                                return
-                                            }
-                                            process.log(`你选择了治疗魔法，HP恢复${this.cureMagicPlus}`)
-                                            this.magic -= this.cureMagicCost
-                                            this.game.health += this.cureMagicPlus
-                                            break;
-                                        case 1:
-                                            if (this.magic < 70) {
-                                                process.log("你的魔法值不够！")
-                                                return
-                                            }
-                                            process.log(`你选择了战斗魔法，Att提高5，持续一回合。`)
-                                            this.battleMagic = true
-                                            this.magic -= 70
-                                            this.game.attack += 5
-                                            break;
-                                        case 2:
-                                            if (this.black) {
-                                                if (this.magic < 100) {
-                                                    process.log("你的魔法值不够！")
-                                                    return
-                                                }
-                                                process.log("水晶被黑暗笼罩住了！黑暗法术增强了！")
-                                                this.magic = 0
-                                                this.enemy.health = 0
-                                            } else {
-                                                process.log("l͓̩̫̘͙͔̯͖̟̤̓͊̑̌́̂̆̚ò̥̪̭̱̰̝̒͂̄͋̿̏͆́̚c͍̲͇͚̖̬͈̪͙̳͌̉́̃k̪̥̱̝̱̑̈́̏̽͗̊̈́͂̀̍e̞͎̩̜̱̩͚̤̊͌̀̀d̠̖̞̝̙̪̟̞̐͛̈̊̀͂̄͌̓̏͌̓ͅ")
-                                                return
-                                            }
-                                            break;
-                                        case 3:
-                                            let currentMagic = this.magic
-                                            this.magic = 0
-                                            this.enemy.health -= currentMagic / 2
-                                            process.log(`你选择了几何八面体，对【${this.enemy.name}】造成${currentMagic / 2}点伤害！`)
-                                            break;
-                                        default:
-                                            throw new Error("非法输入")
-                                        
-                                    }
-                                    process.die(proc)
-                                    ok = true
-                                }).go()
-                                proc.die(ok ? this : chooseMagic())
-                            })
-                        }).go()
-                        
-                        this.wait(() => chooseMagic())
+                        this.magicChoose()
                         break;
                     case 3:
                         this.log("你选择了跳过。")
@@ -398,6 +335,71 @@
                     let $button = Game.button().html("攻击！").appendTo($attack).on("click", () => attack())
                 })
             }
+        }
+        magicChoose() {
+            this.log("你选择了魔法。")
+            this.wait(500)
+            let magics = [`治疗魔法（${this.cureMagicCost}）`, "战斗魔法（70）", `黑暗魔法（${this.black ? "100" : "？"}）`]
+            if (this.octahedron) { // 如果 几何八面体 enabled
+                magics.push("几何八面体（消耗全部魔法值造成一半伤害）")
+            }
+            var ok = false
+            const chooseMagic = () => 
+            this.game.Process((proc) => {
+                proc.choose(magics, ( magic) => {
+                    this.game.Process((process) => {
+                        switch (magic) {
+                            case 0:
+                                if (this.magic < this.cureMagicCost) {
+                                    process.log("你的魔法值不够！")
+                                    return
+                                }
+                                process.log(`你选择了治疗魔法，HP恢复${this.cureMagicPlus}`)
+                                this.magic -= this.cureMagicCost
+                                this.game.health += this.cureMagicPlus
+                                break;
+                            case 1:
+                                if (this.magic < 70) {
+                                    process.log("你的魔法值不够！")
+                                    return
+                                }
+                                process.log(`你选择了战斗魔法，Att提高5，持续一回合。`)
+                                this.battleMagic = true
+                                this.magic -= 70
+                                this.game.attack += 5
+                                break;
+                            case 2:
+                                if (this.black) {
+                                    if (this.magic < 100) {
+                                        process.log("你的魔法值不够！")
+                                        return
+                                    }
+                                    process.log("水晶被黑暗笼罩住了！黑暗法术增强了！")
+                                    this.magic = 0
+                                    this.enemy.health = 0
+                                } else {
+                                    process.log("l͓̩̫̘͙͔̯͖̟̤̓͊̑̌́̂̆̚ò̥̪̭̱̰̝̒͂̄͋̿̏͆́̚c͍̲͇͚̖̬͈̪͙̳͌̉́̃k̪̥̱̝̱̑̈́̏̽͗̊̈́͂̀̍e̞͎̩̜̱̩͚̤̊͌̀̀d̠̖̞̝̙̪̟̞̐͛̈̊̀͂̄͌̓̏͌̓ͅ")
+                                    return
+                                }
+                                break;
+                            case 3:
+                                let currentMagic = this.magic
+                                this.magic = 0
+                                this.enemy.health -= currentMagic / 2
+                                process.log(`你选择了几何八面体，对【${this.enemy.name}】造成${currentMagic / 2}点伤害！`)
+                                break;
+                            default:
+                                throw new Error("非法输入")
+                            
+                        }
+                        process.die(proc)
+                        ok = true
+                    }).go()
+                    proc.die(ok ? this : chooseMagic())
+                })
+            }).go()
+            
+            this.wait(() => chooseMagic())
         }
         
         static check5Capitals(str) {
@@ -522,9 +524,11 @@
                 this.round()
             }
         }
+        // @ts-ignore
         get magic() {
             return this._magic
         }
+        // @ts-ignore
         set magic(val) {
             if (val > 100) {
                 val = 100
@@ -537,6 +541,7 @@
         roundEnd(fn) {
             this.roundEndCallback.push(fn)
         }
+        // @ts-ignore
         get black() {
             return this.game.judge(1024)
         }
@@ -553,12 +558,15 @@
             this.attack = enemyData.attack
             this.defence = enemyData.defence
             this.defenseRate = enemyData.defenseRate
+            
             this.random = enemyData.random
             this.message = enemyData.message
         }
+        // @ts-ignore
         get health() {
             return this._health
         }
+        // @ts-ignore
         set health(val) {
             if (val <= 0) {
                 this.battle.win()
@@ -583,6 +591,10 @@
             $sw0rd.on("click", () => {
                 location.href = "https://wiki.cvserver.top"
             })
+            var $author = $("#author")
+            $author.on("click", () => {
+                $author.hide()
+            })
             setTimeout(() => {
                 $white.remove()
                 $sw0rd.fadeOut(1000)
@@ -602,6 +614,7 @@
                 let $chapter = $("<div/>").addClass("ate-chapter").appendTo($chapters)
                 if (data[i]) {
                     $chapter.html("Chapter " + i).on("click", () => {
+                        
                         this.chapter = i
                         $chapters.fadeOut(() => {
                             $chapters.remove()
@@ -649,22 +662,22 @@
                 this.health = this.store.health
                 this.experience = this.store.experience
                 this.items = this.store.items
+                this.stackables = this.store.stackables
                 for (let each of this.items) { // 快快看，Zes在这里把of写成in
                 	this._add(each) // 无需parseInt, Game.items是number[]
                 }
                 this.weapon = this.store.weapon
                 this.armor = this.store.armor
                 this.cm = this.store.cm
-                this.stackables = this.store.stackables
             } else {
                 this.store = {}
                 this.health = data[this.chapter].maxHealth
                 this.cm = 0
                 
                 this.experience = []
+                this.stackables = {}
                 
                 this.items = []
-                this.stackables = {}
             }
             for (let each of data.items) {
                 if (each.stackable && !(each.id in this.stackables)) {
@@ -693,24 +706,33 @@
         log(msg) {
             this.wait(() => this._log(msg))
         }
-        showItems() {
+        
+        showItems(nothrowable) {
             var a = []
-            $.each(this.items, (_, id) => a.push(data.items[id].name) )
+            for (let each of this.items) {
+                let itemData = data.items[each]
+                if (itemData.throwable !== false || !nothrowable) {
+                    a.push(itemData.name)
+                }
+            }
             return a
         }
         
         putOn(item) {
-            if (data.items[item].attack || data.items[item].id === 24) { // 零剑
+            var itemData = data.items[item]
+            if ("attack" in itemData && itemData.attack || itemData.id === 24) { // 零剑
                 this.weapon = item
-            } else if (data.items[item].defence) {
+            } else if ("defence" in itemData && itemData.defence) {
                 this.armor = item
             } else {
                 throw new Error("不可佩戴")
             }
         }
+        // @ts-ignore
         get attack() {
             return this._attack
         }
+        // @ts-ignore
         set attack(val) {
             this._attack = val
             if (this.weapon === 24) {
@@ -719,23 +741,29 @@
             }
             this.$attack.html(val)
         }
+        // @ts-ignore
         get defence() {
             return this._defence
         }
+        // @ts-ignore
         set defence(val) {
             this._defence = val
             this.$defence.html(val)
         }
+        // @ts-ignore
         get cm() {
             return this._cm
         }
+        // @ts-ignore
         set cm(val) {
             this._cm = val
             this.$cm.html(val)
         }
+        // @ts-ignore
         get health() {
             return this._health
         }
+        // @ts-ignore
         set health(val) {
             if (val > data[this.chapter].maxHealth) {
                 val = data[this.chapter].maxHealth
@@ -746,10 +774,12 @@
             this.$health.html(val)
             this.$healthRate.css("height", val / 240 * 100 + "%")
         }
+        // @ts-ignore
         get weapon() {
             return this._weapon
         }
         
+        // @ts-ignore
         set weapon(weapon) {
             if (!weapon) {
                 return
@@ -761,6 +791,7 @@
                     window.clearInterval(this.timer.id)
                     this.attack -= this.timer.lastAdd
                 } else {
+                    // @ts-ignore
                     this.attack -= data.items[old].attack
                 }
                 this._add(old)
@@ -778,14 +809,17 @@
                     this.attack += this.timer.lastAdd
                 }, 5000)
             } else {
+                // @ts-ignore
                 this.attack += data.items[weapon].attack
             }
             this.$weapon.html(name)
         }
+        // @ts-ignore
         get armor() {
             return this._armor
         }
         
+        // @ts-ignore
         set armor(armor) {
             if (!armor) {
                 return
@@ -793,6 +827,7 @@
             var name = data.items[armor].name, old = this._armor
             this._armor = armor
             if (old) {
+                // @ts-ignore
                 this.defence -= data.items[old].defence
                 this._add(old)
                 this.items.push(old)
@@ -800,6 +835,7 @@
             this._removeItem(armor)
             this.items.splice(this.items.indexOf(armor), 1)
             this.addImage(this.$armor, armor)
+            // @ts-ignore
             this.defence += data.items[armor].defence
             this.$armor.html(name)
         }
@@ -811,7 +847,7 @@
             
             const add = ( stackable) => {
                 if (this.items.length === this.max) {
-                    var items = this.showItems()
+                    var items = this.showItems(true)
                     items.push("放弃拾取")
                     this.waitProcess(process, p => {
                         p.log("已满，请丢弃一项")
@@ -891,7 +927,7 @@
         
         setStackableAmount(item, amount) {
             if (this.stackables[item] !== 0 && amount !== 0) {
-                this.$items.eq(this.items.indexOf(item)).find(".ate-item-amount").html(amount)
+                this.$items.eq(this.items.indexOf(item)).find(".ate-item-amount").html("" + amount)
             }
             this.stackables[item] = amount
             if (amount === 0) {
@@ -904,6 +940,8 @@
         }
         
         remove(index, process) {
+            // @ts-ignore
+            // @ts-ignore
             var item = this.items[index]
             process = process || this
             process.wait( () => this._remove(index) )
@@ -930,6 +968,7 @@
             var item = this.remove(index, battle)
             var itemData = data.items[item]
             battle.log(itemData.name)
+            // @ts-ignore
             for (let each of itemData.use) {
             	this.execute(each, battle)
             }
@@ -938,11 +977,11 @@
         exp(id) {
         	this.$message.html("")
             this.experience.push(id)
-            var story = data[this.chapter].story[id]
-            if (!Array.isArray(story)) {
-                this.story(story)
+            const story = data[this.chapter].story[id]
+            if (Array.isArray(story)) {
+                this.story(this.judgeArr(story))
             } else {
-                this.story(this.judge(story[1]) ? story[0] : story[2])
+                this.story(story)
             }
         }
         
@@ -952,14 +991,9 @@
                 if (typeof each === "string") {
                     msg = each
                 } else if (Array.isArray(each)) {
-                    if (each[2]) {
-                        msg = this.judge(each[1]) ? each[0] : each[2]
-                    } else {
-                        if (this.judge(each[1])) {
-                            msg = each[0]
-                        } else {
-                            continue;
-                        }
+                    msg = this.judgeArr(each)
+                    if (!msg) {
+                        continue
                     }
                 }
                 if (msg.startsWith("/")) {
@@ -974,27 +1008,24 @@
             if ("battle" in story) {
                 this.battle(story.battle, this)
             }
-            if (story.choice) {
+            if ("choice" in story) {
                 let choices = []
                 for (let each of story.choice) {
                     if (typeof each === "string") {
                         choices.push(each)
                     } else if (Array.isArray(each)) {
-                        if (this.judge(each[1])) {
-                            choices.push(each[0])
-                        } else {
-                            if (each[2]) {
-                                choices.push(each[2])
-                            }
+                        let choice = this.judgeArr(each)
+                        if (choice) {
+                            choices.push(choice)
                         }
                     }
                 }
                 this.choose(choices, ch => {
-                    var to = story.to[ch]
+                    const to = story.to[ch]
                     if (typeof to === "number") {
                         this.exp(to)
                     } else if (Array.isArray(to)) {
-                        this.exp(this.judge(to[1]) ? to[0] : to[2])
+                        this.exp(this.judgeArr(to))
                     }
                 }, story.fadeChoice)
             } else {
@@ -1010,7 +1041,7 @@
                 if (typeof to === "number") {
                     this.wait(() => this.exp(to))
                 } else if (Array.isArray(to)) {
-                    this.wait(() => this.exp(this.judge(to[1]) ? to[0] : to[2]))
+                    this.wait(() => this.exp(this.judgeArr(to)))
                 }
             }
         }
@@ -1058,7 +1089,7 @@
                     battle.enemy.health -= parseInt(tokens[1])
                     break;
                 case "dodge":
-                    this.dodge(parseInt(tokens[1]))
+                    this.dodge(parseInt(tokens[1]), tokens[2])
                     break;
                 case "bridge":
                     this.bridge()
@@ -1067,7 +1098,7 @@
                     this.wait(() => this.shop(parseInt(tokens[1])))
                     break;
                 case "achieve":
-                    this.achieve(tokens[1])
+                    this.achieve(parseInt(tokens[1]))
                     break;
                 case "sleep":
                     break;
@@ -1106,8 +1137,6 @@
                             return this.armor === number
                         case "w":
                             return this.weapon === number
-                        case "i":
-                            return this.items.length === number
                         case "c":
                             return this.cm >= number
                         default:
@@ -1115,6 +1144,23 @@
                     }
                 }
             }
+        }
+        
+        judgeArr(arr) {
+            var l = arr.length
+            var res;
+            for (let i = 0; i < l; i++) {
+                if (i === l - 1) {
+                    res = arr[i]
+                    break
+                }
+                if (this.judge(arr[i + 1])) {
+                    res = arr[i]
+                    break
+                }
+                i++
+            }
+            return res
         }
         
         _choose(choices, callback, fade) {
@@ -1180,8 +1226,9 @@
             })
         }
         
-        dodge(baseEnemy) {
+        dodge(baseEnemy, name) {
             this.waitProcess(this, p => {
+                this.$interface.addClass("battling")
                 const dodge = () => {
                     let str = $input.val()
                     if (typeof str !== "string") {
@@ -1192,13 +1239,16 @@
                     }
                     $attack.remove()
                     let [hurt, letters, _harm] = Battle.computeHurtHarm(str, 0, baseEnemy, true, this)
-                    p.log(`你的攻击是${str}，对方的攻击是${letters}。`)
+                    p.log(`你的攻击是${str}，${name}的攻击是${letters}。`)
                     p.log(`你被扣血${hurt}`)
                     this.health -= hurt
+                    p.wait(() => void this.$interface.removeClass("battling"))
                     p.wait(() => p.die(this))
                 }
                 let $attack = $("<div/>").appendTo(this.$battle)
                 let $input = $("<input/>").attr("type", "text").appendTo($attack).on("keypress", e => {if (e.which === 13) dodge()})
+                // @ts-ignore
+                // @ts-ignore
                 let $button = Game.button().html("攻击！").appendTo($attack).on("click", () => dodge())
             })
         }
@@ -1226,14 +1276,9 @@
                 for (let item in shopData) {
                     let price = shopData[item]
                     if (Array.isArray(price)) {
-                        if (this.judge(price[1])) {
-                            price = price[0]
-                        } else {
-                            if (!price[2]) {
-                                continue
-                            } else {
-                                price = price[2]
-                            }
+                        price = this.judgeArr(price)
+                        if (!price) {
+                            continue
                         }
                     }
                     prices[item] = price
@@ -1285,6 +1330,7 @@
                 delete this.queue
             }
         }
+        // @ts-ignore
         get settings() {
         	var settings
         	var defaultSettings = {
@@ -1302,15 +1348,19 @@
         	}
         	getSettings()
         	return {
+        		// @ts-ignore
         		get speed() {
         			return settings.speed
         		},
+        		// @ts-ignore
         		set speed(val) {
         			setItem("speed", val)
         		},
+                // @ts-ignore
                 get pass() {
                     return settings.pass
                 },
+                // @ts-ignore
                 set pass(val) {
                     setItem("pass", val)
                 }
@@ -1374,7 +1424,9 @@
             setTimeout(() => $achivement.fadeOut(3000), 12000)
             this.achievements.push(id)
         }
+        // @ts-ignore
         get achievements() {
+            
             var ach = localStorage.ateAchievements ? JSON.parse(localStorage.ateAchievements) : []
             return {
                 
@@ -1386,6 +1438,7 @@
                 includes(id) {
                     return ach.includes(id)
                 },
+                // @ts-ignore
                 get length() {
                     return ach.length
                 }
@@ -1420,6 +1473,9 @@
     }
 
 
+        if (new URL(location.href).searchParams.get("pw") != "3473473639574279") {
+            return
+        }
     	window.ateGame = new Game()
         window.ATEGame = Game
         $.extend(Game, {Queue, Battle, Enemy})
