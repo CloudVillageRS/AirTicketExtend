@@ -847,8 +847,10 @@
             var amount = amount || 1
             process = process || this
             
-            const add = ( stackable) => {
-                if (this.items.length === this.max) {
+
+            
+            const add = stackable => {
+                if (this.items.length === this.max && !(stackable && this.has(item))) {
                     var items = this.showItems(true)
                     items.push("放弃拾取")
                     this.waitProcess(process, p => {
@@ -875,7 +877,7 @@
                             this.setStackableAmount(item, this.stackables[item] + amount)
                         }
                         this._add(item)
-                        p.wait(() =>p.die(process))
+                        p.waitDie(process)
                     })
                 }
             }
@@ -929,7 +931,8 @@
         
         setStackableAmount(item, amount) {
             if (this.stackables[item] !== 0 && amount !== 0) {
-                this.$items.eq(this.items.indexOf(item)).find(".ate-item-amount").html("" + amount)
+                this.$items.children().eq(this.items.indexOf(item)).find(".ate-item-amount").html("" + amount)
+                
             }
             this.stackables[item] = amount
             if (amount === 0) {
@@ -1483,9 +1486,9 @@
         $.extend(Game, {Queue, Battle, Enemy})
 
 
-    	document.title = "游玩 Air Ticket Extend"
-    	$("#firstHeading").html(`--- Air Ticket Extend v ${version} ---`)
+    	document.title = "游玩 Extend Air Ticket"
+    	$("#firstHeading").html(`--- Extend Air Ticket v ${version} ---`)
         $("#version").html(version)
 
-})(jQuery, ateData, "2.11.0 Beta")
+})(jQuery, ateData, "2.11.1 Beta")
 
