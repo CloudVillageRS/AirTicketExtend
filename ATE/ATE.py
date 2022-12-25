@@ -1,11 +1,17 @@
 '''
+游玩：将data.json与此文件置于同一目录下，运行本文件
+
+
+
 这是原版模块化。
+开发一定要结合data.jsonc来看！！
 '''
 import json
 import sys
 import random
-from typing import List, Optional, Union, Dict, overload
+from typing import List, Optional, Union, Dict
 import time
+import os
 
 Condition = Union[int, str]
 
@@ -20,7 +26,7 @@ LOVECA = 2
 R = random.randint(1, 100)
 
 def to_int(s) -> Optional[int]:
-    "字符串转整形，失败返回None"
+    "字符串转整形，失败返回None而非报错。不支持负数"
     if len(s) == 0:
         return None
     for char in s:
@@ -97,13 +103,14 @@ class Items(object):
     背包中的所有物品存储在其list属性中。
     可用items[id]返回指定id的物品（不是index）
     '''
-    def __init__(self, game: "Game", ditems: Optional[List[int]] = None, dstackables: Optional[Dict[int, int]] = None) -> None:
+    def __init__(self, game: "Game", ditems: Optional[List[int]] = None, dstackables: Optional[Dict[str, int]] = None) -> None:
         self.list: List[Item] = []
         self.game = game
+        self.max = 10
         if not ditems or not dstackables:
             return None
         for ditem in ditems:
-            self.list.append(Item(game, ditem, dstackables[ditem] if ditem in dstackables else 1))
+            self.list.append(Item(game, ditem, dstackables[str(ditem)] if ditem in dstackables else 1))
     def __getitem__(self, id: int) -> Optional[Item]:
         "items[id]返回指定id的物品（如果有）。注意不是指定索引的物品。"
         for each in self.list:
@@ -167,6 +174,9 @@ class Items(object):
         for each in item.use:
             self.game.execute(each, battle)
 
+    def is_full(self):
+        return len(self.list) >= self.max
+
 
 class DictReader(object):
     "字典读取器。如果提供了不存在的键，并不会返回错误而是返回None。"
@@ -186,11 +196,10 @@ class Enemy(object):
         if self.full is None:
             raise TypeError("no full")
         self.health = self.full
-        self.attack = enemy_data["attack"]
-        self.defence = enemy_data["defence"] or 0
-        self.defense_rate = enemy_data["defenseRate"] or 0
-        self.random = enemy_data["random"]
-        self.message = enemy_data["message"]
+        self.attack: int = enemy_data["attack"] or 0
+        self.defence: int = enemy_data["defence"] or 0
+        self.defense_rate: float = enemy_data["defenseRate"] or 0.0
+        self.message: Optional[List[str]] = enemy_data["message"]
     
     @property
     def health(self):
@@ -252,6 +261,21 @@ class Battle(object):
             return
         input(f"第{self.rounds + 1}回合")
         print(f"你的HP为{self.game.health}，魔法值为{self.magic}，敌方HP为{self.enemy.health}")
+        if self.enemy.id == 7: # CRD(2)
+            if self.rounds == 9:
+                print("CRD：“什么？！你们居然还能挺得住，看来我要动用增援了！”")
+                print("第一个长矛向你袭来")
+                self.game.battle(8)
+                print("第二个长矛向你袭来")
+                self.game.battle(8)
+        elif self.enemy.id == 8: # 短矛
+            if self.rounds == 6:
+                self.game.achieve(2) # 论持久战
+        if self.enemy.message:
+            l = len(self.enemy.message)
+            r = random.randint(1, l)
+            if r < l:
+                print(self.enemy.message[r])
         self.prepare()
         if self.won:
             return
@@ -327,7 +351,7 @@ class Battle(object):
         enemy_fight = ""
         harm, hurt = 0, 0 # 对敌方的伤害 对我方的伤害
         enemy_defense = random.random() < self.enemy.defense_rate # P([0, 1)的随机数小于防御率) = 防御率
-        enemy_defence = enemy.defence if enemy_defense else 0
+        enemy_defence = self.enemy.defence if enemy_defense else 0
         same = None
         if self.enemy.id == 4 and self.rounds % 4 == 3: # 长矛特殊技能
             same = random.randint(0,3)
@@ -335,7 +359,7 @@ class Battle(object):
             char_enemy = random.randint(0,3) if same is None else same
             char_this = ord(this_fight[i]) - A # 转成整形再运算克制关系
             enemy_fight += chr(char_enemy + A)
-            if char_this == char_enemy - 1 or char_enemy == 0 and char_this == 3: #字符转化为数字计算
+            if char_this == char_enemy - 1 or char_enemy == 0 and char_this == 3: # 字符转化为数字计算
                 if not self.defense:
                     if self.game.attack > enemy_defence:
                         harm += self.game.attack
@@ -401,25 +425,24 @@ class Game(object):
         self._weapon = None
         try:
             with open("store.json", "r", encoding="utf-8") as store_file:
-                self.store: dict = json.load(store_file)
-                self.health = self.store["health"]
-                self.savepoint: int = self.store["savepoint"]
-                self.chapter: int = self.store["chapter"]
-                self.cm = self.store["cm"]
-                if "armor" in self.store:
+                self.store = DictReader(json.load(store_file))
+                self.health = self.store["health"] or 240
+                self.chapter: int = self.store["chapter"] or 1
+                self.cm = self.store["cm"] or 0
+                if self.store["armor"]:
                     self.armor = Item(self, self.store["armor"])
-                if "weapon" in self.store:
+                if self.store["weapon"]:
                     self.weapon = Item(self, self.store["weapon"])
                 self.items: Items = Items(self, self.store["items"], self.store["stackables"])
-                self.experience = self.store["experience"]
+                self.experience = self.store["experience"] or []
         except IOError: # 如果没有存档
             self.store = {}
             self.health = 240
-            self.savepoint = 0
             self.chapter = 1
             self.items = Items(self)
             self.cm = 0
             self.experience = []
+        
         self.chapter_data = self.data[str(self.chapter)]
         self.achievements = Achievements(self)
 
@@ -436,13 +459,13 @@ class Game(object):
     BATTLE = 2
     def run(self):
         "跑起来"
-        to = self.savepoint
+        to = 0 if len(self.experience) == 0 else self.experience[-1] # 取消savepoint改用experience的最后一项
         while True:
             to = self.exp(to)
 
     def exp(self, id: int):
         self.experience.append(id)
-        story: Union[dict, list] = self.chapter_data["story"][str(id)]
+        story: Union[dict, List[dict]] = self.chapter_data["story"][str(id)]
         if type(story) is list:
             story = self.judge_list(story)
         return self.story(story)
@@ -461,6 +484,7 @@ class Game(object):
             if self.judge(arr[i + 1]):
                 return arr[i]
             i += 2
+        return None
         
     def judge(self, condition: Condition):
         "条件为整数或满足/[rihcaw][0-9]+/的字符串，非法返回False"
@@ -471,14 +495,13 @@ class Game(object):
             p = condition[0]
             s = condition[1:]
             if p == "r": # 彩蛋随机数
-                if R == int(s):
-                    return True
+                return R == int(s)
             elif p == "i": # 拥有某物品
                 return self.items.has(int(s))
             elif p == "h": # 生命值为某值
                 return self.health == int(s)
-            elif p == "c": # CM币数量为某值
-                return self.cm == int(s)
+            elif p == "c": # CM币数量达到某值
+                return self.cm >= int(s)
             elif p == "a": # 防具为
                 return self.armor and self.armor.id == int(s)
             elif p == "w": # 武器为
@@ -487,12 +510,12 @@ class Game(object):
 
     def view_status(self):
         lst = self.items.get_list()
+        print("HP:", self.health)
+        print("ATT:", self.attack)
+        print("DEF:", self.defence)
+        print("防具:", self.armor.name if self.armor else "莫得")
+        print("武器:", self.weapon.name if self.weapon else "木有")
         if len(lst):
-            print("HP:", self.health)
-            print("ATT:", self.attack)
-            print("DEF:", self.defence)
-            print("防具:", self.armor.name if self.armor else "莫得")
-            print("武器:", self.weapon.name if self.weapon else "木有")
             print("你有：", ", ".join(lst))
             print("你要看哪样？")
             ch = self.choose(lst + ["劳资不看"])
@@ -510,11 +533,17 @@ class Game(object):
                     self.armor = item
         else:
             print("你啥子都没得")
+        # Underdiscussion
+        print("提示：按Q键可以保存")
+        # endUnderdiscussion
     
-    def choose(self, choices: List[str]):
+    def choose(self, choices: List[str], fade_choice: Optional[List[int]] = None):
         "传入选项，返回用户选择"
         l = len(choices)
-        lst = [chr(i + A) + choices[i] for i in range(l)]
+        lst = []
+        for i in range(l):
+            if not fade_choice or i in fade_choice:
+                lst.append(chr(i + A) + choices[i]) 
         s = ",".join(lst)
         ipt = input(s)
         while len(ipt) != 1 or not (0 <= ord(ipt) - A < l):
@@ -527,6 +556,9 @@ class Game(object):
         if type(story["message"]) is not list:
             raise TypeError("Story.message must be a list")
         
+        # self.save()
+        # 待定方式
+
         for msg in story["message"]:
             if type(msg) is list:
                 msg = self.judge_list(msg)
@@ -546,6 +578,10 @@ class Game(object):
                     self.view_status()
                 elif ipt == "A":
                     self.achievements.show()
+                # Underdiscussion
+                elif ipt == "Q":
+                    self.save()
+                # endUnderdiscussion
         if "choice" in story:
             lst = []
             for each in story["choice"]:
@@ -554,15 +590,19 @@ class Game(object):
                 if not each:
                     continue
                 lst.append(each)
-            to = story["to"][ord(self.choose(lst)) - A]
+            to = story["to"][ord(self.choose(lst, story["fadeChoice"] if "fadeChoice" in story else None)) - A]
         else:
             if "battle" in story:
-                Battle(self, DictReader(self.data["battle"][story["battle"]])).run()
+                self.battle(story["battle"])
             to = story["to"]
         if type(to) is int:
             return to
         elif type(to) is list:
             return self.judge_list(to)
+
+    def battle(self, id):
+        Battle(self, DictReader(self.data["battle"][id])).run()
+
     @staticmethod
     def to_int(s: str):
         '''
@@ -604,21 +644,30 @@ class Game(object):
             elif tokens[1] == "-":
                 self.cm -= Game.to_int(tokens[2])
         elif tokens[0] == "attack":
+            if not battle:
+                raise TypeError("need argument battle if add/reduce att/def")
             if tokens[1] == "+":
                 self.attack += Game.to_int(tokens[2])
                 battle.round_attack += Game.to_int(tokens[2])
             elif tokens[1] == "-":
                 self.attack -= Game.to_int(tokens[2])
         elif tokens[0] == "defence":
+            if not battle:
+                raise TypeError("need argument battle if add/reduce att/def")
             if tokens[1] == "+":
                 self.defence += Game.to_int(tokens[2])
                 battle.round_defence += Game.to_int(tokens[2])
             elif tokens[1] == "-":
                 self.defence -= Game.to_int(tokens[2])
         elif tokens[0] == "achieve":
-            self.achieve(to_int(tokens[1]))
+            self.achieve(int(tokens[1]))
         elif tokens[0] == "dodge":
-            self.dodge(to_int(tokens[1]))
+            self.dodge(int(tokens[1]), tokens[2])
+        elif tokens[0] == "bridge":
+            self.bridge()
+        elif tokens[0] == "shop":
+            self.shop(self.data["shop"][int(tokens[1])])
+
     def die(self):
         if False: # 还没有超级爱心
             print('黑暗再度笼罩,使用超级爱心吗？')
@@ -667,11 +716,15 @@ class Game(object):
             "items": items,
             "stackables": stackables,
             "health": self.health,
-            "savepoint": self.savepoint,
-            "chapter": self.chapter
+            "chapter": self.chapter,
+            "experience": self.experience,
+            "weapon": self.weapon.id if self.weapon else None,
+            "armor": self.armor.id if self.armor else None,
+            "cm": self.cm
         }
-        with open("save.json", "w+", encoding="utf-8") as save:
+        with open("store.json", "w+", encoding="utf-8") as save:
             save.write(json.dumps(self.store))
+        print("------保存成功！------")
 
     @property
     def armor(self):
@@ -699,7 +752,7 @@ class Game(object):
             self.attack -= old.attack
         self.attack += item.attack # 零剑逻辑没加
 
-    def dodge(self, base_enemy: int):
+    def dodge(self, base_enemy: int, name: str):
         "躲避"
         this_fight = Battle.input5()
         enemy_fight = ""
@@ -711,10 +764,80 @@ class Game(object):
             if char_enemy == char_this - 1 or char_this == 0 and char_enemy == 3:
                 if self.defence < base_enemy:
                     hurt += base_enemy
-        print(f"你的攻击是{this_fight}，对方的攻击是{enemy_fight}。")
+        print(f"你的攻击是{this_fight}，{name}的攻击是{enemy_fight}。")
         print(f"你被扣血{hurt}")
         self.health -= hurt
     
+    def bridge(self) -> None:
+        "触发过桥情节"
+        bridges = ("B,C", "A,C", "A,B")
+        while True:
+            print("选择一座桥以通过")
+            choice = ord(self.choose(["", "", ""])) - A
+            no_bridge = random.randint(0, 2) # 两个有桥相当于一个没桥
+            if no_bridge == choice:
+                print(f"翻转地板组成了桥{bridges[no_bridge]}，你没通过桥！")
+            else:
+                return print("你通过了桥！")
+    @staticmethod
+    def check2(s: str, num: int):
+        "（静态方法）检查二进制字符是否符合要求。"
+        if len(s) != num:
+            return False
+        for char in s:
+            if ord(char) < 0 or ord(char) > 1:
+                return False
+        return True
+    
+    def door(self, amount: int, least: int) -> None:
+        '''
+        第二章升降门二进制版
+        比特塔内还有字母版
+        '''
+        while True:
+            choice = input(f'请输入你的通过方式，由{amount}个二进制字符组成，最低通过{least}/{amount}')  
+            while not Game.check2(choice, least):
+                print('你输的啥啊（')
+            doors = ''
+            count = 0
+            for i in range(amount):
+                door = random.choice(['0','1'])
+                if door != choice[i]:
+                    count += 1
+                doors += door
+            if count >= least:
+                return print('你通过了升降门！')
+            print(f'升降门的升降形式是{doors},你只通过了{count}道升降门，请重新来过')
+
+    def shop(self, shop_data: dict) -> None:
+        "商店"
+        prices = {}
+        item_ids = []
+        items: List[str] = [] # 呈现给用户的选项
+        for item in shop_data:
+            price = shop_data[item]
+            if type(price) is list:
+                price = self.judge_list(price)
+                if not price:
+                    continue
+            prices[int(item)] = price
+            item_ids.append(int(item))
+            items.append(self.data["items"][item]["name"] + f"[花费CM币{price}个]")
+        leave_key = len(items) # 离开选项的列表下标
+        items.append("离开")
+        choice = ord(self.choose(items)) - A
+        if choice == leave_key:
+            return print("你离开了商店")
+        if self.items.is_full():
+            return print("背包空间不足，你离开了商店")
+        bought = item_ids[choice]
+        if self.cm < prices[bought]:
+            print("你的CM币不够！")
+        else:
+            self.cm -= prices[bought]
+            self.items.add(bought, 1)
+        return self.shop(shop_data)
+
     def achieve(self, achievement: int):
         "达成某id成就"
         self.achievements.add(achievement)

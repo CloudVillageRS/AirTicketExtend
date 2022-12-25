@@ -6,13 +6,61 @@
 '''
 
 
-import re
+
+
+def process(jsonc):
+    json = ""
+    instr = False
+    incomment = False
+    esc = False
+    cache = False
+    linecomment = False
+    for char in jsonc:
+        if incomment:
+            if char == "*":
+                cache = True
+            elif cache and char == "/":
+                cache = False
+            elif cache:
+                cache = False
+        else:
+            if linecomment:
+                if char == "\n":
+                    json += "\n"
+                    linecomment = False
+                continue
+            if instr:
+                json += char
+                if not esc and char == '"':
+                    instr = False
+                elif not esc and char == "\\":
+                    esc = True
+                elif esc:
+                    esc = False
+            elif cache and char == "/":
+                linecomment = True
+                cache = False
+            elif char == "/":
+                cache = True
+            elif cache and char == "*":
+                incomment = True
+                cache = False
+            elif cache:
+                json += "/" + char
+                cache = False
+            elif char == '"':
+                json += char
+                instr = True
+            else:
+                json += char
+    return json
+
 
 def main():
     with open("data.jsonc","r", encoding="utf-8") as jsonc_file:
         jsonc = jsonc_file.read()
 
-    processed = re.sub("/\*.*?\*/","",re.sub("//.*?\n", "\n", jsonc))
+    processed = process(jsonc)
     with open("data.json", "w+", encoding="utf-8") as json_file:
         json_file.write(processed)
     with open("json.js", "w+", encoding="utf-8") as json_file:
