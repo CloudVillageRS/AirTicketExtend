@@ -417,6 +417,7 @@ class Battle(object):
 
 class Game(object):
     def __init__(self) -> None:
+        input("Re: Air Ticket Extend正在为您读取存档...")
         self.load()
         
     def read(self) -> None:

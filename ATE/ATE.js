@@ -666,16 +666,18 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
             this.id = -1
             this.$interface = $(".ate-interface")
             this.$settings = Game.button().html("设置").on("click", () => this.settingsMenu()).appendTo(this.$interface)
-            var $enter = $("<div/>").addClass("ate-enter").html("Air Ticket Extend<div>Click to start</div>").prependTo(this.$interface).one("click", () => {
+            var $enter = $("<div/>").addClass("ate-enter").html("Extend Air Ticket<div>Click to start</div>").prependTo(this.$interface).one("click", () => {
                 $enter.fadeOut(3000, () => {
                     $enter.remove()
                 })
             })
             var $white = $("<div/>").addClass("ate-white").prependTo(this.$interface)
             var $sw0rd = $("<div/>").addClass("ate-sw0rd").prependTo(this.$interface).hide().fadeIn(1000)
+/* #soloonly {
             $sw0rd.on("click", () => {
                 location.href = "https://wiki.cvserver.top"
             })
+} */
             var $author = $("#author")
             $author.on("click", () => {
                 $author.hide()
@@ -1714,7 +1716,7 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
 /** #nosolo */
     }
 /** #endnosolo */
-})(jQuery, ateData, "2.10.1/** #nolts */ Beta/** #endnolts */")
+})(jQuery, ateData, "2.11.0/** #nolts */ Beta/** #endnolts */")
 
 /** #nosolo */
 })
