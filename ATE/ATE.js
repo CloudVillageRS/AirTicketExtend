@@ -975,8 +975,14 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
             var amount = amount || 1
             process = process || this
             
-            const add = (/** @type {boolean} */ stackable) => {
-                if (this.items.length === this.max) {
+
+            /**
+             * 仅用于不可堆叠，或原来数量为零的可堆叠。
+             * 也就是需要往物品栏添加元素时才使用该函数。
+             * @param {boolean} stackable 
+             */
+            const add = stackable => {
+                if (this.items.length === this.max && !(stackable && this.has(item))) {
                     var items = this.showItems(true)
                     items.push("放弃拾取")
                     this.waitProcess(process, p => {
@@ -1003,7 +1009,7 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
                             this.setStackableAmount(item, this.stackables[item] + amount)
                         }
                         this._add(item)
-                        p.wait(() =>p.die(process))
+                        p.waitDie(process)
                     })
                 }
             }
@@ -1063,7 +1069,8 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
          */
         setStackableAmount(item, amount) {
             if (this.stackables[item] !== 0 && amount !== 0) {
-                this.$items.eq(this.items.indexOf(item)).find(".ate-item-amount").html("" + amount)
+                this.$items.children().eq(this.items.indexOf(item)).find(".ate-item-amount").html("" + amount)
+                /* 大意了没有闪，这里$items属性包含ate-items一个元素而不是ate-item所有元素 */
             }
             this.stackables[item] = amount
             if (amount === 0) {
@@ -1710,13 +1717,13 @@ $.getJSON("https://cloudvillage.miraheze.org/wiki/User:ZeScript/ate.json?action=
 /* #ltsonly #soloonly {
         var game = new Game()
 } */
-    	document.title = "游玩 Air Ticket Extend"
-    	$("#firstHeading").html(`--- Air Ticket Extend v ${version} ---`)
+    	document.title = "游玩 Extend Air Ticket"
+    	$("#firstHeading").html(`--- Extend Air Ticket v ${version} ---`)
         $("#version").html(version)
 /** #nosolo */
     }
 /** #endnosolo */
-})(jQuery, ateData, "2.11.0/** #nolts */ Beta/** #endnolts */")
+})(jQuery, ateData, "2.11.1/** #nolts */ Beta/** #endnolts */")
 
 /** #nosolo */
 })
