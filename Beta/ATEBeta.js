@@ -366,6 +366,7 @@
                     if (this.rounds === 6) {
                         this.game.achieve(2)
                     }
+                    break;
                 case 10: // 鹿法师
                 case 11:
                     if (this.rounds % 5 === 4) {
@@ -373,6 +374,7 @@
                         this.enemy.attack += 5
                         this.roundEnd(() => this.enemy.attack -= 5)
                     }
+                    break;
                 case 13: // 机械木马
                     if (this.enemy.health < 400) {
                         this.log('机械木马的HP降低了！')
@@ -1580,7 +1582,7 @@
         }
         
         battle(id, owner) {
-            this.wait(() => {
+            owner.wait(() => {
                 var battle = new Battle(data.battle[id], this, owner)
                 battle.run()
             })
