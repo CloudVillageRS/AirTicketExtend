@@ -398,6 +398,8 @@
                         this.fightTimes = 2
                     }
                     break;
+                default:
+                    break
             }
             if (this.enemy.message) {
                 let message = this.enemy.message
@@ -485,7 +487,84 @@
                 case 3:
                     this.log("你选择了跳过。")
             }
-            
+            // 隐藏boss J12132特殊技能
+            if (this.enemy.id === 14 && !this.defense) { // 大招
+                if (this.chaoAttacked == false && (this.chaos >= 85 || this.enemy.health <= 1400)) {
+                    this.log('混沌持续上升！战斗已经进入白热化！')
+                    this.log('现在，你需要独自一人面对考验')
+                    this.log('J12132正在释放一次“混沌冲击！”')
+                    this.withXk = false
+                    this.octahedron = false
+                    this.chaoAttacked = true
+                    this.fightTimes = 2
+                    this.enemy.attack += 5
+                    this.game.virtually(12133)
+                    this.roundEnd(() => {
+                        this.enemy.attack -= 5
+                    })
+                } else { // 每回合若不选防御随机触发一个技能
+                    switch (Math.floor(Math.random() * 4)) {
+                        case 0:
+                            this.log("小丑使用了“红心治疗”！")
+                            this.game.waitChoose(this, ["进攻", "诅咒"], ch => {
+                                if (ch == 0) {
+                                    this.chaos += randInt(3,5)
+                                    this.enemy.health += randInt(10,50)
+                                } else {
+                                    this.log('你诅咒小丑的治疗法术，小丑的法术失效了！')
+                                    this.chaos += 1
+                                }
+                            })
+                            break
+                        case 1: // 草花？不是梅花吗（
+                            this.log('小丑使用了“草花守护”！')
+                            this.game.waitChoose(this, ["进攻", "打散"], ch => {
+                                if (ch == 0) {
+                                    this.chaos += randInt(3,4)
+                                    let attack = this.game.attack
+                                    this.game.attack = 0
+                                    this.roundEnd(() => this.game.attack = attack)
+                                } else {
+                                    this.log('你用力向草花打去')
+                                    this.chaos += 2
+                                }
+                            })
+                            break
+                        case 2:
+                            this.log('小丑使用了“方块箭矢”！')
+                            this.game.waitChoose(this, ["进攻", "格挡"], ch => {
+                                if (ch == 0) {
+                                    this.chaos += 2
+                                    this.game.health -= randInt(5,35)
+                                } else {
+                                    this.log('你尽可能地格挡箭矢的进攻')
+                                    this.chaos += randInt(1,5)
+                                    this.game.attack -= 10
+                                    this.roundEnd(() => this.game.attack += 10)
+                                }
+                            })
+                            break
+                        case 3:
+                            this.log('小丑使用了“黑桃炸弹”！')
+                            this.game.waitChoose(this, ["进攻", "闪躲"], ch => {
+                                if (ch == 0) {
+                                    this.chaos += randInt(2,3)
+                                    this.enemy.attack += 5
+                                    this.roundEnd(() => this.enemy.attack -= 5)
+                                } else {
+                                    this.log('你拼命闪躲着炸弹，你的防御增加了！同时攻击减少了')
+                                    this.chaos += randInt(3,5)
+                                    this.game.defence += 10
+                                    this.game.attack -= 10
+                                    this.roundEnd(() => this.game.defence -= 10)
+                                    this.roundEnd(() => this.game.attack += 10)
+                                }
+                            })
+                            break
+                    }
+                }
+            }
+            //
             this.fightInput()
         }
         
@@ -851,7 +930,7 @@
             this.$interface = $(".ate-interface")
             this.$settings = Game.button().html("设置").on("click", () => this.settingsMenu()).appendTo(this.$interface)
             var $enter = $("<div/>").addClass("ate-enter").html("Extend Air Ticket<div>Click to start</div>").prependTo(this.$interface).one("click", () => {
-                $enter.fadeOut(3000, () => {
+                $enter.fadeOut(1000, () => {
                     $enter.remove()
                 })
             })
@@ -907,8 +986,10 @@
             this.$message = $("<div/>").addClass("ate-messages").appendTo(this.$interface)
             this.$battle = $("<div/>").addClass("ate-battle").appendTo(this.$interface)
             this.$buttons = $("<div/>").addClass("ate-choices").appendTo(this.$interface)
-            this.$weapon = $("<div/>").html("武器").appendTo(this.$equipments)
-            this.$armor = $("<div/>").html("防具").appendTo(this.$equipments)
+            this.$weapon = $("<div/>").appendTo(this.$equipments)
+            this.$armor = $("<div/>").appendTo(this.$equipments)
+            this.$armor.append($("<span/>").addClass("ate-item-name").html("防具"))
+            this.$weapon.append($("<span/>").addClass("ate-item-name").html("武器"))
             this.table.add("health", "HP", data[this.chapter].maxHealth, "green")
             this.table.add("attack", "Att")
             this.table.add("defence", "Def")
@@ -1086,7 +1167,8 @@
                 // @ts-ignore
                 this.attack += data.items[weapon].attack
             }
-            this.$weapon.html(name)
+            // @ts-ignore
+            this.$weapon.html($("<span/>").addClass("ate-item-name").html(name))
         }
         // @ts-ignore
         get armor() {
@@ -1111,7 +1193,8 @@
             this.addImage(this.$armor, armor)
             // @ts-ignore
             this.defence += data.items[armor].defence
-            this.$armor.html(name)
+            // @ts-ignore
+            this.$armor.html($("<span/>").addClass("ate-item-name").html(name))
         }
         // #endregion
         
@@ -1180,7 +1263,7 @@
                 throw new Error("没有找到空位")
             }
             this.addImage($item, item)
-        	$item.append(itemData.name)
+        	$item.append($("<span/>").addClass("ate-item-name").html(itemData.name))
         	var $des = $("<span/>").addClass("ate-item-description").appendTo($item)
             var $desDiv = $("<div/>").html(itemData.description).appendTo($des)
             if (itemData.stackable) {
@@ -1903,5 +1986,5 @@
     	$("#firstHeading").html(`--- Extend Air Ticket v ${version} ---`)
         $("#version").html(version)
 
-})(jQuery, ateData, "2.12.0 Beta")
+})(jQuery, ateData, "2.12.1.32 Beta")
 
