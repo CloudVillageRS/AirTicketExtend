@@ -1,16 +1,23 @@
+html, body {
+	height: 100%;
+	width: 100%;
+	margin: 0;
+}
+
 .ate-interface {
-	background-color: #DDDDDD;
-    background-image: "./images/CVLogo3.jpg";
-	min-height: 40em;
-	border: 4px grey solid;
+	background-color: #EEEEEE;
+	/* border: 4px grey solid; */
 	position: relative;
+	height: 100%;
+	box-sizing: border-box;
 }
 
 .ate-messages {
-	padding: 1em;
+	padding: 1.5em;
 	height: 10em;
 	overflow: scroll;
 	cursor: pointer;
+	box-sizing: border-box;
 }
 
 .ate-equipments {
@@ -18,24 +25,33 @@
 }
 
 .ate-items, .ate-equipments {
-	background-color: #eee;
-	border: 0.2em black solid;
+	background-color: #ddd;
+	/* border: 0.2em black solid; */
 	box-sizing: border-box;
 	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(6.2em, 1fr));
+	grid-template-columns: repeat(auto-fit, minmax(4.2em, 1fr));
+	border-radius: 8px;
 }
 
 .ate-item, .ate-equipments > div {
 	background-color: silver;
-	border: 1px solid black;
-	height: 6em;
-	width: 6em;
+	/* border: 1px solid black; */
+	height: 4em;
+	width: 4em;
 	box-sizing: border-box;
     text-align: center;
     color: aqua;
     background-repeat: no-repeat;
     background-position: center;
 	background-size: cover;
+	cursor: pointer;
+	border-radius: 8px;
+}
+
+.ate-item-name {
+	color: white;
+	backdrop-filter: blur(1px);
+	background-color: #3337;
 }
 
 
@@ -45,17 +61,18 @@
 .ate-item-description > div {
 	position: absolute;
 	z-index: 100;
-    width:8em;
+    width: 8em;
     background-color: #f8f9fa;
     color: black;
     display: none;
+	border-radius: 6px;
 }
 .ate-item:hover .ate-item-description > div {
     display: block;
 }
 
 .ate-choice {
-	min-width: 8em;
+	width: 8em;
 	font-size: 120%;
 	padding: 1em;
 	float: left;
@@ -66,7 +83,7 @@
 	transition: 0.5s ease-in-out background-color;
 	cursor: pointer;
     border-radius: 7px;
-    border: 1px cyan solid;
+    /* border: 1px cyan solid; */
 }
 .ate-choice:hover {
 	background-color: #003d9960;
@@ -76,15 +93,40 @@
 	border: 2px #eee solid;
 }
 
+.ate-self-table {
+	transition: 1s ease-in margin-top;
+}
+
+.ate-interface.battling .ate-self-table {
+	margin-top: 4em;
+}
+
 .ate-info {
 	background-color: #ccc;
 	height: 2.5em;
+	border-radius: 6px;
 }
 
 .ate-info td, .ate-info th {
 	background-color: #aaa;
 	position: relative;
 	font-size: 150%;
+	border-top-right-radius: 6px;
+	border-bottom-left-radius: 6px;
+}
+
+.ate-info td:first-child {
+	border-top-left-radius: 6px;
+}
+.ate-info td:last-child {
+	border-bottom-right-radius: 6px;
+}
+
+.ate-val-rise {
+	position: absolute;
+	top: 1em;
+	left: 0;
+	opacity: 100%
 }
 
 .ate-info-rate {
@@ -105,19 +147,26 @@
 	padding: 1em;
 	box-sizing: border-box;
 	background-color: #f8f9fa;
-	border: 1px blue solid;
+	/* border: 1px blue solid; */
 	z-index: 1000;
+	border-radius: 10px;
+}
+.ate-settings textarea {
+	width: 80%;
+	height: 6em;
 }
 
 .ate-settings-done {
 	position: absolute;
-	height: 1em;
-	width: 1em;
+	height: 2em;
+	width: 3em;
 	top: 0;
 	right: 0;
 	background-color: red;
-	border: 1px black solid;
+	/* border: 1px black solid; */
 	cursor: pointer;
+	border-top-right-radius: 6px;
+	border-bottom-left-radius: 6px;
 }
 
 .ate-history {
@@ -159,20 +208,46 @@
 
 .ate-button {
 	cursor: pointer;
-	border: 1px black solid;
-	border-radius: 2px;
+	border-radius: 4px;
 	display: inline-block;
 	padding: 2px 6px;
-	background-color: #ccc;
+	background-color: #59e;
 	font-size: 120%;
+	user-select: none;
+}
+.ate-button + .ate-button {
+	margin-left: 1px;
 }
 
 .ate-button:hover {
-	background-color: #ccca;
+	background-color: #59ec;
 }
 
 .ate-button:active {
-	background-color: #bbb;
+	background-color: #59ea;
+}
+
+.ate-button.ate-button-negative {
+	background-color: #f33;
+}
+
+.ate-button.ate-button-negative:hover {
+	background-color: #f33c;
+}
+
+.ate-button.ate-button-negative:active {
+	background-color: #f33a;
+}
+.ate-button.ate-button-on {
+	background-color: #3e6;
+}
+
+.ate-button.ate-button-on:hover {
+	background-color: #3e6c;
+}
+
+.ate-button.ate-button-on:active {
+	background-color: #3e6a;
 }
 
 .ate-notification {
@@ -187,6 +262,7 @@
 }
 
 .ate-chapters {
+	max-height: 90%;
 	overflow-x: auto;
 }
 
@@ -195,13 +271,14 @@
 	writing-mode: vertical-lr;
 	font-size: 4em;
 	display: inline-block;
-	border: 2px solid grey;
-	height: 100%;
+	/* border: 2px solid grey; */
+	height: 80%;
 	width: 1.5em;
 	text-align: center;
 	color: #6699cc;
 	cursor: pointer;
 	margin-left: 0.5em;
+	border-radius: 8px;
 }
 
 .ate-chapter-locked {
@@ -241,3 +318,177 @@
 .ate-enter > div {
 	font-size: 0.2em;
 }
+
+#author {
+	position: absolute;
+	right: 4px;
+	top: 4px;
+	z-index: 114514;
+	opacity: 50%;
+}
+
+#author a {
+	color: black;
+	transition: .5s ease-in opacity;
+}
+
+#author a:hover {
+	opacity: 70%;
+}
+
+@media only screen and (orientation: landscape) and (max-height: 600px) {
+	.ate-info {
+		display: inline-table;
+		vertical-align: middle;
+	}
+	.ate-messages, .ate-battle {
+		transition: 0.5s ease-in-out width;
+	}
+	.ate-interface.battling .ate-messages, .ate-interface.battling .ate-battle {
+		width: calc(50% - 5em)
+	}
+	/*
+	.ate-items {
+		position: absolute;
+		right: 0;
+		top: 0;
+	}
+	*/
+	.ate-choice {
+		font-size: 100%;
+		float: none;
+		width: 7em;
+		padding: 0.25em;
+		margin-top: 1px;
+	}
+	.ate-choices {
+		position: absolute;
+		width: 8em;
+		right: 0;
+		bottom: 0;
+	}
+	.ate-messages {
+		width: calc(100% - 10em);
+		position: absolute;
+		bottom: 0;
+	}
+	.ate-battle {
+		position: absolute;
+		right: 10em;
+		width: 0;
+		bottom: 0;
+		overflow-x: auto;
+	}
+}
+
+@keyframes ate-char-self-success {
+	0% {
+		top: 70%
+	}
+	45% {
+		top: 50%
+	}
+	60% {
+		top: 50%
+	}
+	100% {
+		top: 20%
+	}
+}
+
+@keyframes ate-char-self-failed {
+	0% {
+		top: 70%
+	}
+	45% {
+		top: 50%;
+		opacity: 1
+	}
+	60% {
+		opacity: 0;
+		top: 50%
+	}
+	100% {
+		opacity: 0;
+		top: 50%
+	}
+}
+
+@keyframes ate-char-self-defense-success {
+	0% {
+		top: 50%
+	}
+	100% {
+		top: 50%
+	}
+}
+
+@keyframes ate-char-self-defense-failed {
+	0% {
+		top: 50%
+	}
+	45% {
+		opacity: 1
+	}
+	60% {
+		top: 50%;
+		opacity: 0
+	}
+	100% {
+		opacity: 0;
+		top: 50%
+	}
+}
+
+@keyframes ate-char-self-defense-broken {
+	
+	0% {
+		top: 50%;
+		color: var(--char-color)
+	}
+	45% {
+		top: 50%;
+		transform: rotate(0);
+	}
+	60% {
+		top: 200%;
+		transform: rotate(3600deg);
+	}
+	100% {
+		color: black;
+		top: 200%
+	}
+}
+
+@keyframes ate-char-enemy-success {
+	0% {
+		bottom: 70%
+	}
+	45% {
+		bottom: 50%
+	}
+	60% {
+		bottom: 50%
+	}
+	100% {
+		bottom: 20%
+	}
+}
+@keyframes ate-char-enemy-failed {
+	0% {
+		bottom: 70%
+	}
+	45% {
+		bottom: 50%;
+		opacity: 1
+	}
+	60% {
+		bottom: 50%;
+		opacity: 0
+	}
+	100% {
+		opacity: 0;
+		bottom: 50%
+	}
+}
+
