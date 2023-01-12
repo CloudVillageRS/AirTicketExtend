@@ -122,6 +122,7 @@
                 random: false
         	}
             this.opened = false
+            this.hidden = true
             this.$element = $(".ate-settings").hide()
             
             this.$cover = $("<div/>")
@@ -172,22 +173,25 @@
             this.$doneButton = $(".ate-settings-done")
             this.$speed = $("#ate-settings-speed")
         }
+        
         get(key) {
             return this.values[key]
         }
+        
         set(key, val) {
             this.values[key] = val
             localStorage.ateSettings = JSON.stringify(this.values)
         }
+        
         toggle(key) {
             this.set(this.get(key))
         }
         open() {
-            if (this.opened) {
+            if (!this.hidden) {
                 return
             }
             this.opened = true
-            
+            this.hidden = false
             
             var storage = btoa(localStorage.gameData || "")
             this.$export.val(storage)
@@ -205,13 +209,16 @@
                 }
                 const IMPORT_VAL = this.$export.val()
                 if (typeof IMPORT_VAL !== "string") {
-                    throw new Error("$speed.val() is a str")
+                    throw new Error("$sxport.val() is a str")
                 }
                 if (IMPORT_VAL !== storage) {
                     localStorage.gameData = atob(IMPORT_VAL)
                 }
                 // 窗口往左飘走
-                this.$element.animate({left: "-100%"}, 3000, () => this.$element.hide())
+                this.$element.animate({left: "-100%"}, 3000, () => {
+                    this.$element.hide()
+                    this.hidden = true
+                })
                 // 移除遮罩
                 this.$cover.hide()
             })
@@ -1233,7 +1240,7 @@
             if (localStorage.gameData) {
                 this.storage = JSON.parse(localStorage.gameData)
                 
-                this.chapter = this.storage.chapter
+                this.chapter = this.storage.chapter || 1
             } else {
                 this.chapter = 1
             }
