@@ -9,9 +9,11 @@
 
 
 (function ($, data, version) {
+    const LOVECA = 2
+    const SW0RD = 24
     
     function randInt(start, end) {
-        return start + Math.floor(Math.random() *(end - start + 1))
+        return start + Math.floor(Math.random() * (end - start + 1))
     }
     class TableItem {
         
@@ -26,8 +28,12 @@
             if (color && full) {
                 this.$rate = $("<div/>")
                     .addClass("ate-info-rate")
-                    .css("backgroundColor", color)
                     .insertAfter(this.$val)
+                if (color.startsWith("linear-gradient")) {
+                    this.$rate.css("backgroundImage", color)
+                } else {
+                    this.$rate.css("backgroundColor", color)
+                }
             }
         }
         
@@ -104,6 +110,113 @@
         remove() {
             this.$outer.remove()
             return this
+        }
+    }
+    class Settings {
+        
+        constructor(game) {
+            this.game = game
+            this.values = localStorage.ateSettings ? JSON.parse(localStorage.ateSettings) : {
+        		speed: 1500,
+                pass: false,
+                random: false
+        	}
+            this.opened = false
+            this.$element = $(".ate-settings").hide()
+            
+            this.$cover = $("<div/>")
+                .addClass("ate-cover")
+                .appendTo(this.game.$interface)
+                .hide()
+            this.$tags = $(".ate-settings-tag")
+            this.$pages = $(".ate-settings-page")
+            this.index = 0
+            this.$tags.each((index, tag) => {
+                let $tag = $(tag)
+                $tag.on("click", () => {
+                    if (index === this.index) {
+                        return;
+                    }
+                    this.$tags.eq(this.index).removeClass("ate-settings-tag-show")
+                    this.$pages.eq(this.index).removeClass("ate-settings-page-show")
+                    this.index = index
+                    this.$tags.eq(index).addClass("ate-settings-tag-show")
+                    this.$pages.eq(index).addClass("ate-settings-page-show")
+                })
+            })
+            for (let key of ["pass", "random"]) {
+                let $btn = $("#ate-settings-" + key)
+                let val = this.get(key)
+                if (val) {
+                    $btn.addClass("ate-button-on")
+                }
+                $btn.html(val ? "是" : "否").on("click", () => {
+                    val = !val
+                    this.toggle(key)
+                    $btn.html(val ? "是" : "否").toggleClass("ate-button-on")
+                })
+            }
+            $("#ate-settings-clear").on("click", () => {
+                delete localStorage.gameData
+                this.game.notify("存档已清除！")
+            })
+            // 播放过的消息
+            if (this.game.history) {
+                var $history = $(".ate-history")
+                for (let each of this.game.history) {
+                    $("<li/>").html(each).appendTo($history)
+                }
+            }
+            
+            this.$export = $("#ate-export")
+            this.$doneButton = $(".ate-settings-done")
+            this.$speed = $("#ate-settings-speed")
+        }
+        get(key) {
+            return this.values[key]
+        }
+        set(key, val) {
+            this.values[key] = val
+            localStorage.ateSettings = JSON.stringify(this.values)
+        }
+        toggle(key) {
+            this.set(this.get(key))
+        }
+        open() {
+            if (this.opened) {
+                return
+            }
+            this.opened = true
+            
+            
+            var storage = btoa(localStorage.gameData || "")
+            this.$export.val(storage)
+            this.$doneButton.one("click", () => {
+                if (!this.opened) {
+                    return
+                }
+                this.opened = false
+                const SPEED_VAL = this.$speed.val()
+                if (typeof SPEED_VAL !== "string") {
+                    throw new Error("$speed.val() is a str")
+                }
+                if (SPEED_VAL.match(/^\d+$/)) {
+                    this.set("speed", parseInt(SPEED_VAL))
+                }
+                const IMPORT_VAL = this.$export.val()
+                if (typeof IMPORT_VAL !== "string") {
+                    throw new Error("$speed.val() is a str")
+                }
+                if (IMPORT_VAL !== storage) {
+                    localStorage.gameData = atob(IMPORT_VAL)
+                }
+                // 窗口往左飘走
+                this.$element.animate({left: "-100%"}, 3000, () => this.$element.hide())
+                // 移除遮罩
+                this.$cover.hide()
+            })
+            this.$cover.show()
+            this.$element.show()
         }
     }
     class Queue {
@@ -204,7 +317,7 @@
         }
         
         log(msg) {
-            this.wait(() => this.game._log(msg))
+            this.game.log(msg, this)
         }
         
         wait(fn) {
@@ -224,6 +337,78 @@
             this.wait(() => this.die(after))
         }
     }
+    class Item {
+        
+        constructor(id, game, $element, amount) {
+            this.game = game
+            var itemData = data.items[id]
+            this.id = id
+            this.name = itemData.name
+            this.description = itemData.description
+            this.stackable = itemData.stackable
+            this.throwable = itemData.throwable
+            if ("battle" in itemData && itemData.battle) {
+                this.battle = true
+                this.use = itemData.use
+                this.type = Item.BATTLE
+            } else if ("attack" in itemData) {
+                this.attack = itemData.attack
+                this.type = Item.WEAPON
+            } else if ("defence" in itemData) {
+                this.defence = itemData.defence
+                this.type = Item.ARMOR
+            } else {
+                this.type = Item.NORMAL
+            }
+            this.loadUI($element)
+            if (this.stackable) {
+                this.amount = amount
+            }
+        }
+        // @ts-ignore
+        get amount() {
+            return this._amount
+        }
+        // @ts-ignore
+        set amount(val) {
+            this.$amount.html(val + "")
+            this._amount = val
+        }
+        
+        loadUI($element) {
+            this.$element = $element
+            $element.html("")
+            this.game.addImage($element, this)
+        	$element.append($("<span/>").addClass("ate-item-name").html(this.name))
+        	var $des = $("<span/>").addClass("ate-item-description").appendTo($element)
+            var $desDiv = $("<div/>").html(this.description).appendTo($des)
+            console.log("test", $element, $des)
+            if (this.stackable) {
+                this.$amount = $("<span/>")
+                $desDiv.append("<br>你有")
+                    .append(this.$amount)
+                    .append("个")
+            }
+            if (this.type == Item.ARMOR && this.game.armor !== this
+                || this.type == Item.WEAPON && this.game.weapon !== this) {
+                var $button = Game.button("装备").appendTo($desDiv)
+                $button.on("click", () => {
+                    this.game.equip(this)
+                })
+            }
+            if (this.throwable != false) {
+                Game.button("丢弃").appendTo($desDiv).on("click", () => {
+                    if (this.game.armor !== this && this.game.weapon !== this) {
+                        this.game.removeItem(this)
+                    }
+                })
+            }
+        }
+    }
+    Item.NORMAL = 0
+    Item.BATTLE = 1
+    Item.WEAPON = 2
+    Item.ARMOR = 3
     class Battle {
         
         constructor(battleData, game, after) {
@@ -257,6 +442,7 @@
             this.enemyTable.add("health", "HP", enemyData.health, "red")
             this.enemyTable.add("gunHealth", "炮筒", 5, "orange", true)
             this.enemyTable.add("chaos", "混沌", 120, "linear-gradient(red, grey)", true)
+            this.enemyTable.add("rules", "规则度", 100, "linear-gradient(orange, grey)", true)
             this.enemy = new Enemy(enemyData, this)
             
             this.zeroTable = new Table("ate-zero-table", "Zero").appendTo(this.$element)
@@ -266,11 +452,21 @@
             this.magic = 0
             
             this.rounds = 0
-            if (this.enemy.id === 14) {
-                this.enemyTable.chaos.show()
-                this.chaos = 0
-                
-                this.chaoAttacked = false
+            switch (this.enemy.id) {
+                case 14:
+                    this.enemyTable.chaos.show()
+                    this.chaos = 0
+                    
+                    this.chaoAttacked = false
+                    break;
+                case 17: //罗尔斯
+                    this.enemyTable.rules.show()
+                    this.rules = 0
+                    this.talked = false
+                    this.intenseFight = false
+                    break;
+                default:
+                    break;
             }
         }
         
@@ -300,7 +496,7 @@
         }
         
         log(msg) {
-            this.wait(() => this.game._log(msg))
+            this.game.log(msg, this)
         }
         
         wait(fn) {
@@ -342,9 +538,10 @@
             this.heavyAttack = false
             
             this.fightTimes = 1
+            this.breakHarm = false
             
             this.roundEndCallback = []
-            if (this.game.armor === 23) { // 混乱护盾
+            if (this.game.armor && this.game.armor.id === 23) { // 混乱护盾
                 this.game.execute("health + [3,20]")
             }
             switch (this.enemy.id) {
@@ -398,6 +595,27 @@
                         this.fightTimes = 2
                     }
                     break;
+                case 17:
+                    let raa = 10
+                    if (this.intenseFight == true) {
+                        raa = 5
+                    }
+                    if (this.defense) {
+                        raa = Math.floor(raa / 2)
+                    }
+                    if (randInt(1, raa) == 1) {
+                        this.log("罗尔斯举起了重剑！罗尔斯的攻击力提高了！")
+                        this.enemy.attack += 10
+                        this.roundEnd(() => this.enemy.attack -= 10)
+                        this.breakHarm = true
+                    }
+                    if (randInt(1, raa) == 1) {
+                        let poker = randInt(10, 35)
+                        this.game.health -= poker
+                        this.log(`罗尔斯使用了一发扑克散弹,你受到了${poker}点伤害！`)
+                    }
+                    this.enemy.attack += 5
+                    this.roundEnd(() => this.enemy.attack -= 5)
                 default:
                     break
             }
@@ -450,8 +668,7 @@
                     let battlables = []
                     for (let index in this.game.items) {
                         let item = this.game.items[index]
-                        let itemData = data.items[item]
-                        if ("battle" in itemData && itemData.battle === true) {
+                        if (item.battle) {
                             battlables.push(parseInt(index))
                         }
                     }
@@ -470,6 +687,9 @@
                             })
                         }
                     })
+                    if (this.enemy.id === 17) {
+                        this.rules += randInt(2, 5)
+                    }
                     break;
                 case 1:
                     this.log("你选择了防御。")
@@ -481,6 +701,10 @@
                     if (this.magic === 0 || (!this.octahedron && this.magic < this.cureMagicCost)) {
                         this.log("你的魔法值不够！")
                         return this.prepareChoose()
+                    }
+                    if (this.enemy.id === 17) {
+                        this.magicChooseForLorce()
+                        break;
                     }
                     this.magicChoose()
                     break;
@@ -568,6 +792,113 @@
             this.fightInput()
         }
         
+        magicChoose() {
+            this.log("你选择了魔法。")
+            this.wait(200)
+            
+            let magics = [`治疗魔法（${this.cureMagicCost}）`, "战斗魔法（70）", `黑暗魔法（${this.black ? "100" : "？"}）`]
+            if (this.octahedron) { // 如果 几何八面体 enabled
+                magics.push("几何八面体（消耗全部魔法值造成一半伤害）")
+            }
+            this.game.waitChoose(this, magics, (magicType, process, rechoose) => {
+                switch (magicType) {
+                    case 0:
+                        if (this.magic < this.cureMagicCost) {
+                            process.log("你的魔法值不够！")
+                            return rechoose()
+                        }
+                        process.log(`你选择了治疗魔法，HP恢复${this.cureMagicPlus}`)
+                        this.magic -= this.cureMagicCost
+                        this.game.health += this.cureMagicPlus
+                        break;
+                    case 1:
+                        if (this.magic < 70) {
+                            process.log("你的魔法值不够！")
+                            return rechoose()
+                        }
+                        process.log(`你选择了战斗魔法，Att提高5，持续一回合。`)
+                        this.battleMagic = true
+                        this.magic -= 70
+                        this.game.attack += 5
+                        break;
+                    case 2:
+                        if (this.black) {
+                            if (this.magic < 100) {
+                                process.log("你的魔法值不够！")
+                                return rechoose()
+                            }
+                            process.log("水晶被黑暗笼罩住了！黑暗法术增强了！")
+                            this.magic = 0
+                            this.enemy.health = 0
+                        } else {
+                            process.log("l͓̩̫̘͙͔̯͖̟̤̓͊̑̌́̂̆̚ò̥̪̭̱̰̝̒͂̄͋̿̏͆́̚c͍̲͇͚̖̬͈̪͙̳͌̉́̃k̪̥̱̝̱̑̈́̏̽͗̊̈́͂̀̍e̞͎̩̜̱̩͚̤̊͌̀̀d̠̖̞̝̙̪̟̞̐͛̈̊̀͂̄͌̓̏͌̓ͅ")
+                            return rechoose()
+                        }
+                        break;
+                    case 3:
+                        if (this.enemy.id === 9) {
+                            this.game.virtually(200)
+                        }
+                        let currentMagic = this.magic
+                        this.magic = 0
+                        this.enemy.health -= currentMagic / 2
+                        process.log(`你选择了几何八面体，对【${this.enemy.name}】造成${currentMagic / 2}点伤害！`)
+                        break;
+                    default:
+                        throw new Error("非法输入")
+                }
+                return false;
+            })
+            
+        }
+        magicChooseForLorce() {
+            this.log("你选择了魔法。")
+            this.wait(200)
+            if (!this.talked) {
+                this.log('星空对你说：“罗尔斯的规则法术……好像对我们也有作用！”')
+                this.talked = true
+            }
+            
+            let magics = ["超级治疗（60）", "规则防御（30）", "几何八面体（消耗全部魔法值造成一半伤害）"]
+            this.game.waitChoose(this, magics, (magicType, process, rechoose) => {
+                switch (magicType) {
+                    case 0:
+                        if (this.magic < 60) {
+                            this.log("你的魔法值不够！")
+                            return rechoose()
+                        }
+                        this.log("你试着用尽全力使出治疗法术……你的血量和攻击力增加了！")
+                        this.game.health += 80
+                        this.game.attack += 5
+                        this.battleMagic = true
+                        this.magic -= 60
+                        break;
+                    case 1:
+                        if (this.magic < 30) {
+                            this.log("你的魔法值不够！")
+                            return rechoose()
+                        }
+                        this.log("你使用了规则防御，罗尔斯的攻击降低了！罗尔斯的防御略微降低了！")
+                        this.magic -= 30
+                        this.enemy.attack -= 10
+                        this.roundEnd(() => this.enemy.attack += 10)
+                        this.enemy.defence -= 5
+                        this.roundEnd(() => this.enemy.defence += 5)
+                        break;
+                    case 2:
+                        let currentMagic = this.magic
+                        this.magic = 0
+                        this.enemy.health -= currentMagic / 2
+                        process.log(`你选择了几何八面体，对【罗尔斯】造成${currentMagic / 2}点伤害！`)
+                        break;
+                    default:
+                        throw new Error("非法输入")
+                }
+                this.rules += randInt(3, 7)
+                return false;
+            })
+        }
+        
         fightInput() {
             this.wait( () => {
                 const attack = () => {
@@ -596,81 +927,10 @@
                     }
                     $input.val(String.fromCharCode(...str))
                 }
-                Game.button()
-                    .html("攻击！")
+                Game.button("攻击！")
                     .appendTo($attack)
                     .on("click", () => attack())
             })
-        }
-        
-        magicChoose() {
-            this.log("你选择了魔法。")
-            this.wait(500)
-            
-            let magics = [`治疗魔法（${this.cureMagicCost}）`, "战斗魔法（70）", `黑暗魔法（${this.black ? "100" : "？"}）`]
-            if (this.octahedron) { // 如果 几何八面体 enabled
-                magics.push("几何八面体（消耗全部魔法值造成一半伤害）")
-            }
-            var ok = false
-            const chooseMagic = () => 
-            this.game.Process((proc) => {
-                proc.choose(magics, ( magic) => {
-                    this.game.Process((process) => {
-                        switch (magic) {
-                            case 0:
-                                if (this.magic < this.cureMagicCost) {
-                                    process.log("你的魔法值不够！")
-                                    return
-                                }
-                                process.log(`你选择了治疗魔法，HP恢复${this.cureMagicPlus}`)
-                                this.magic -= this.cureMagicCost
-                                this.game.health += this.cureMagicPlus
-                                break;
-                            case 1:
-                                if (this.magic < 70) {
-                                    process.log("你的魔法值不够！")
-                                    return
-                                }
-                                process.log(`你选择了战斗魔法，Att提高5，持续一回合。`)
-                                this.battleMagic = true
-                                this.magic -= 70
-                                this.game.attack += 5
-                                break;
-                            case 2:
-                                if (this.black) {
-                                    if (this.magic < 100) {
-                                        process.log("你的魔法值不够！")
-                                        return
-                                    }
-                                    process.log("水晶被黑暗笼罩住了！黑暗法术增强了！")
-                                    this.magic = 0
-                                    this.enemy.health = 0
-                                } else {
-                                    process.log("l͓̩̫̘͙͔̯͖̟̤̓͊̑̌́̂̆̚ò̥̪̭̱̰̝̒͂̄͋̿̏͆́̚c͍̲͇͚̖̬͈̪͙̳͌̉́̃k̪̥̱̝̱̑̈́̏̽͗̊̈́͂̀̍e̞͎̩̜̱̩͚̤̊͌̀̀d̠̖̞̝̙̪̟̞̐͛̈̊̀͂̄͌̓̏͌̓ͅ")
-                                    return
-                                }
-                                break;
-                            case 3:
-                                if (this.enemy.id === 9) {
-                                    this.game.virtually(200)
-                                }
-                                let currentMagic = this.magic
-                                this.magic = 0
-                                this.enemy.health -= currentMagic / 2
-                                process.log(`你选择了几何八面体，对【${this.enemy.name}】造成${currentMagic / 2}点伤害！`)
-                                break;
-                            default:
-                                throw new Error("非法输入")
-                            
-                        }
-                        process.die(proc)
-                        ok = true
-                    }).go()
-                    proc.die(ok ? this : chooseMagic())
-                })
-            }).go()
-            
-            this.wait(() => chooseMagic())
         }
         
         static check5Capitals(str) {
@@ -711,6 +971,9 @@
                     if (breakRate && Math.random() < breakRate) {
                         defence = 0
                         broken = true
+                    }
+                    if (!defense) {
+                        defence = 0
                     }
                     if (defence < baseEnemy) {
                         hurt += baseEnemy - defence
@@ -846,6 +1109,19 @@
                 this.win()
             }
         }
+        // @ts-ignore
+        get rules() {
+            return this._rules
+        }
+        // @ts-ignore
+        set rules(val) {
+            this._rules = val
+            this.enemyTable.rules.set(val)
+            if (val >= 100) {
+                this.log("战斗的规则摇晃着崩塌了")
+                this.win()
+            }
+        }
         
         roundEnd(callback) {
             this.roundEndCallback.push(callback)
@@ -928,7 +1204,8 @@
         constructor() {
             this.id = -1
             this.$interface = $(".ate-interface")
-            this.$settings = Game.button().html("设置").on("click", () => this.settingsMenu()).appendTo(this.$interface)
+            this.settings = new Settings(this)
+            this.$settings = Game.button("设置").on("click", () => this.settings.open()).appendTo(this.$interface)
             var $enter = $("<div/>").addClass("ate-enter").html("Extend Air Ticket<div>Click to start</div>").prependTo(this.$interface).one("click", () => {
                 $enter.fadeOut(1000, () => {
                     $enter.remove()
@@ -937,10 +1214,7 @@
             var $white = $("<div/>").addClass("ate-white").prependTo(this.$interface)
             var $sw0rd = $("<div/>").addClass("ate-sw0rd").prependTo(this.$interface).hide().fadeIn(1000)
 
-            $sw0rd.on("click", () => {
-                location.href = "https://wiki.cvserver.top"
-            })
-
+            
             var $author = $("#author")
             $author.on("click", () => {
                 $author.hide()
@@ -956,6 +1230,13 @@
                 this.itemImages.push("./images/" + each.id + ".png")
             }
 
+            if (localStorage.gameData) {
+                this.storage = JSON.parse(localStorage.gameData)
+                
+                this.chapter = this.storage.chapter
+            } else {
+                this.chapter = 1
+            }
             this.chooseChapter()
         }
         
@@ -963,15 +1244,16 @@
             var $chapters = $("<div/>").addClass("ate-chapters").appendTo(this.$interface)
             for (let i = 1; i <= 5; i++) {
                 let $chapter = $("<div/>").addClass("ate-chapter").appendTo($chapters)
-                if (data[i]) { // 若数据中有该章节
+                if (data[i] && i == this.chapter) { // 若数据中有该章节
                     $chapter.html("Chapter " + i).on("click", () => {
                         
-                        this.chapter = i
                         $chapters.fadeOut(() => {
                             $chapters.remove()
                             this.run()
                         })
                     })
+                } else if (data[i] && i < this.chapter) {
+                    $chapter.addClass("ate-chapter-passed").html("passed")
                 } else { // 若尚无该章节
                     $chapter.addClass("ate-chapter-locked").html("locked")
                 }
@@ -979,24 +1261,32 @@
         }
         
         run() {
-            this.$save = Game.button().html("保存").on("click", () => this.save()).appendTo(this.$interface)
+            
+            this.$save = Game.button("保存").on("click", () => this.save()).appendTo(this.$interface)
             this.table = new Table("ate-vals", "状态栏").appendTo(this.$interface)
+            
             this.$items = $("<div/>").addClass("ate-items").appendTo(this.$interface)
+            
             this.$equipments = $("<div/>").addClass("ate-equipments").appendTo(this.$interface)
+            
             this.$message = $("<div/>").addClass("ate-messages").appendTo(this.$interface)
+            
             this.$battle = $("<div/>").addClass("ate-battle").appendTo(this.$interface)
+            
             this.$buttons = $("<div/>").addClass("ate-choices").appendTo(this.$interface)
-            this.$weapon = $("<div/>").appendTo(this.$equipments)
-            this.$armor = $("<div/>").appendTo(this.$equipments)
-            this.$armor.append($("<span/>").addClass("ate-item-name").html("防具"))
+            
+            this.$weapon = $("<div/>").addClass("ate-item").appendTo(this.$equipments)
+            
+            this.$armor = $("<div/>").addClass("ate-item").appendTo(this.$equipments)
             this.$weapon.append($("<span/>").addClass("ate-item-name").html("武器"))
+            this.$armor.append($("<span/>").addClass("ate-item-name").html("防具"))
             this.table.add("health", "HP", data[this.chapter].maxHealth, "green")
             this.table.add("attack", "Att")
             this.table.add("defence", "Def")
             this.table.add("cm", "CM币")
 
             
-            this.max = 10
+            this.max = data[this.chapter].maxItems
             for (let i = 0; i < this.max; i++) {
                 $("<div/>").addClass("ate-item").appendTo(this.$items)
             }
@@ -1006,20 +1296,30 @@
             this.defence = 0
             var localStorage = window.localStorage
             if (localStorage.gameData) {
-                this.store = JSON.parse(localStorage.gameData)
-                this.health = this.store.health
-                this.experience = this.store.experience
-                this.items = this.store.items
-                this.stackables = this.store.stackables
-                for (let each of this.items) { // 快快看，Zes在这里把of写成in
-                	this._add(each) // 无需parseInt, Game.items是number[]
+                this.storage = JSON.parse(localStorage.gameData)
+                this.health = this.storage.health
+                
+                this.items = []
+                this.experience = this.storage.experience
+                this.stackables = this.storage.stackables
+                
+                var items = this.storage.items
+                
+                if (this.storage.weapon) {
+                    this.weapon = new Item(this.storage.weapon, this, this.$weapon, 1)
+                    items.splice(items.indexOf(this.storage.weapon), 1)
                 }
-                this.weapon = this.store.weapon
-                this.armor = this.store.armor
-                this.cm = this.store.cm
-                this.virtualExperience = this.store.virtual || []
+                if (this.storage.armor) {
+                    this.armor = new Item(this.storage.armor, this, this.$armor, 1)
+                    items.splice(items.indexOf(this.storage.armor), 1)
+                }
+                for (let each of items) { // 快快看，Zes在这里把of写成in （现在不用那个遍历（
+                	this.add(each, this.stackables[each]) // 无需parseInt, Game.items是number[]
+                }
+                this.cm = this.storage.cm
+                this.virtualExperience = this.storage.virtual || []
             } else {
-                this.store = {}
+                this.storage = {}
                 this.health = data[this.chapter].maxHealth
                 this.cm = 0
                 
@@ -1031,11 +1331,6 @@
                 this.virtualExperience = []
             }
             
-            for (let each of data.items) {
-                if (each.stackable && !(each.id in this.stackables)) {
-                    this.stackables[each.id] = 0
-                }
-            }
             
             this.R = Math.round(Math.random() * 100) + 1
             
@@ -1044,36 +1339,38 @@
             this.exp(this.experience.length ? this.experience.pop() : 0)
         }
         
-        _log(msg) {
-            var $msg = $("<span/>").html(msg).css("display", "none")
-            var deferred = $.Deferred()
-            this.$message.scrollTop(this.$message[0].scrollHeight)
-            this.$message.append($msg).append("<br>")
-            $msg.fadeIn(this.settings.get("speed"), () => deferred.resolve())
-            this.history.push(msg)
-            return deferred
-        }
-        
-        log(msg) {
-            this.wait(() => this._log(msg))
+        log(msg, process = this) {
+            process.wait(() => {
+                var $msg = $("<span/>").html(msg).css("display", "none")
+                var deferred = $.Deferred()
+                this.$message.scrollTop(this.$message[0].scrollHeight)
+                this.$message.append($msg).append("<br>")
+                if (this.settings.get("speed") === 0) { // 应9Y的建议（
+                    $msg.show()
+                    this.$message.one("click", () => deferred.resolve())
+                } else {
+                    $msg.fadeIn(this.settings.get("speed"), () => deferred.resolve())
+                }
+                this.history.push(msg)
+                return deferred
+            })
         }
         
         showItems(nothrowable) {
             var a = []
             for (let each of this.items) {
-                let itemData = data.items[each]
-                if (itemData.throwable !== false || !nothrowable) {
-                    a.push(itemData.name)
+                if (each.throwable !== false || !nothrowable) {
+                    a.push(each.name)
                 }
             }
             return a
         }
         
-        putOn(item) {
-            var itemData = data.items[item]
-            if ("attack" in itemData && itemData.attack || itemData.id === 24) { // 零剑
+        equip(item) {
+            this.items.splice(this.items.indexOf(item), 1)
+            if (item.type === Item.WEAPON) { // 零剑
                 this.weapon = item
-            } else if ("defence" in itemData && itemData.defence) {
+            } else if (item.type === Item.ARMOR) {
                 this.armor = item
             } else {
                 throw new Error("不可佩戴")
@@ -1088,7 +1385,7 @@
         // @ts-ignore
         set attack(val) {
             this._attack = val
-            if (this.weapon === 24) {
+            if (this.weapon && this.weapon.id === SW0RD) {
                 this.table.attack.$val.html("?")
                 return
             }
@@ -1129,6 +1426,7 @@
             this._health = val
             this.table.health.set(val)
         }
+        
         // @ts-ignore
         get weapon() {
             return this._weapon
@@ -1136,40 +1434,39 @@
         
         // @ts-ignore
         set weapon(weapon) {
-            if (!weapon) {
+            if (!weapon || weapon === this.weapon) {
                 return
             }
-            var name = data.items[weapon].name, old = this.weapon
+            var old = this.weapon
             this._weapon = weapon
             if (old) {
-                if (old === 24) {
+                if (old.id === SW0RD) {
                     window.clearInterval(this.timer.id)
                     this.attack -= this.timer.lastAdd
                 } else {
                     // @ts-ignore
-                    this.attack -= data.items[old].attack
+                    this.attack -= old.attack
                 }
-                this._add(old)
+                old.$element.insertBefore(this.findBlankItem())
                 this.items.push(old)
+            } else if (weapon.$element !== this.$weapon) {
+                this.$weapon.html("").appendTo(this.$items)
             }
-            this._removeItem(weapon)
-            this.items.splice(this.items.indexOf(weapon), 1)
-            this.addImage(this.$weapon, weapon)
-            if (weapon === 24) {
+            weapon.$element.prependTo(this.$equipments)
+            if (weapon.id === SW0RD) {
                 this.timer = {}
                 this.timer.lastAdd = 0
                 this.timer.id = window.setInterval(() => {
                     this.attack -= this.timer.lastAdd
-                    this.timer.lastAdd = 5 + Math.floor(Math.random() * 46)
+                    this.timer.lastAdd = randInt(5, 50)
                     this.attack += this.timer.lastAdd
                 }, 5000)
             } else {
                 // @ts-ignore
-                this.attack += data.items[weapon].attack
+                this.attack += weapon.attack
             }
-            // @ts-ignore
-            this.$weapon.html($("<span/>").addClass("ate-item-name").html(name))
         }
+        
         // @ts-ignore
         get armor() {
             return this._armor
@@ -1177,163 +1474,141 @@
         
         // @ts-ignore
         set armor(armor) {
-            if (!armor) {
+            if (!armor || armor === this.armor) {
                 return
             }
-            var name = data.items[armor].name, old = this._armor
+            var old = this._armor
             this._armor = armor
             if (old) {
                 // @ts-ignore
-                this.defence -= data.items[old].defence
-                this._add(old)
+                this.defence -= old.defence
+                old.$element.insertBefore(this.findBlankItem())
                 this.items.push(old)
+            } else if (armor.$element !== this.$armor) {
+                this.$armor.html("").appendTo(this.$items)
             }
-            this._removeItem(armor)
-            this.items.splice(this.items.indexOf(armor), 1)
-            this.addImage(this.$armor, armor)
+            armor.$element.appendTo(this.$equipments)
             // @ts-ignore
-            this.defence += data.items[armor].defence
-            // @ts-ignore
-            this.$armor.html($("<span/>").addClass("ate-item-name").html(name))
+            this.defence += armor.defence
         }
         // #endregion
         
-        add(item, amount, process) {
-            var itemData = data.items[item]
+        findItem(id) {
+            if (id === undefined) {
+                return undefined
+            }
+            for (let each of this.items) {
+                if (each.id === id) {
+                    return each
+                }
+            }
+        }
+        
+        waitGet(id, amount, process) {
             var amount = amount || 1
             process = process || this
             
 
             
-            const add = stackable => {
-                if (this.items.length === this.max && !(stackable && this.has(item))) {
-                    var items = this.showItems(true)
-                    items.push("放弃拾取")
-                    this.waitProcess(process, p => {
-                        p.log("已满，请丢弃一项")
-                        p.choose(items, ( i) => {
-                            if (i === this.max) { // 放弃拾取
-                                return p.die(this)
-                            }
-                            this._remove(i)
-                            this.items.splice(i, 1)
-                            this.items.push(item)
-                            if (stackable) {
-                                this.setStackableAmount(item, this.stackables[item] + amount)
-                            }
-                            this._add(item)
-                            p.die(process)
-                        })
+            const add = () => {
+                if (this.itemsFull(id)) { // 其实这里判重了，但是不影响
+                    this.wait(() => {
+                        var items = this.showItems(true) // 必须等到当时实时获取物品数组
+                        items.push("放弃拾取")
+                        this.Process(p => {
+                            p.log("已满，请丢弃一项")
+                            p.choose(items, ( i) => {
+                                if (i === this.max) { // 放弃拾取
+                                    return p.die(this)
+                                }
+                                this.remove(i)
+                                this.add(id, amount)
+                                p.die(process)
+                            })
+                        }).go()
                     })
                 } else {
+                    var item = this.add(id, amount)
                     this.waitProcess(process, p => {
-                        p.log(`已将${itemData.name}加入您的背包。`)
-                        this.items.push(item)
-                        if (stackable) {
-                            this.setStackableAmount(item, this.stackables[item] + amount)
-                        }
-                        this._add(item)
+                        p.log(`已将${item.name}加入您的背包。`)
                         p.waitDie(process)
                     })
                 }
             }
-            if (itemData.stackable) {
-                if (this.stackables[item] === 0) {
-                    add(true)
-                } else {
-                    this.setStackableAmount(item, this.stackables[item] + amount)
-                }
+            var mayBeItem = this.findItem(id)
+            if (mayBeItem && mayBeItem.stackable) {
+                mayBeItem.amount += amount
             } else {
-                add(false)
+                add()
             }
         }
-        
-        _add(item) {
-            var itemData = data.items[item]
-        	var $items = this.$items.children(".ate-item"), 
-                $item
-        	$items.each((_, ele) => {
-        		var $ele = $(ele)
-        		if ($ele.html() == "") {
-        			$item = $ele
-        			return false
-        		}
-        	})
+        findBlankItem() {
+            var $items = this.$items.children(".ate-item")
+            
+            var $item
+            $items.each((_, ele) => {
+                var $ele = $(ele)
+                if ($ele.html() == "") {
+                    $item = $ele
+                    return false
+                }
+            })
             if (!$item) {
                 throw new Error("没有找到空位")
             }
-            this.addImage($item, item)
-        	$item.append($("<span/>").addClass("ate-item-name").html(itemData.name))
-        	var $des = $("<span/>").addClass("ate-item-description").appendTo($item)
-            var $desDiv = $("<div/>").html(itemData.description).appendTo($des)
-            if (itemData.stackable) {
-                $desDiv.append(`<br>你有<span class="ate-item-amount">${this.stackables[item]}</span>个`)
-            }
-            if ("attack" in itemData || "defence" in itemData || item === 24) {
-                var $button = Game.button().html("装备").appendTo($desDiv)
-                $button.on("click", () => {
-                    this.putOn(item)
-                })
-            }
-            var pos = this.items.length - 1
-            Game.button().html("丢弃").appendTo($desDiv).on("click", () => {
-                if (itemData.stackable) {
-                    this.removeItem(item, this.queue.now())
-                } else {
-                    this.remove(pos, this.queue.now())
-                }
-            })
+            return $item
         }
         
-        setStackableAmount(item, amount) {
-            if (this.stackables[item] !== 0 && amount !== 0) {
-                this.$items.children().eq(this.items.indexOf(item)).find(".ate-item-amount").html("" + amount)
-                
+        itemsFull(id) {
+            var stackable
+            if (id !== undefined) {
+                stackable = data.items[id].stackable
             }
-            this.stackables[item] = amount
-            if (amount === 0) {
-                this.items.splice(this.items.indexOf(item), 1)
-                this._removeItem(item)
-            }
+            return this.items.length === this.max && !(stackable && this.has(id))
         }
         
-        has(item) {
-        	return this.items.includes(item)
+        add(id, amount) {
+            var item = new Item(id, this, this.findBlankItem(), amount)
+            this.items.push(item)
+            return item
         }
         
-        remove(index, process) {
+        has(id) {
+        	return !!this.findItem(id)
+        }
+        
+        remove(index) {
+            var item = this.items.splice(index, 1)[0]
+            item.$element.html("").css("backgroundImage", "").appendTo(this.$items) // 因为这里写成$items导致了大问题
+            return item
+        }
+        
+        waitRemove(index, process) {
             process = process || this
-            process.wait( () => this._remove(index) )
-            return this.items.splice(index, 1)[0]
+            process.wait(() => void this.remove(index))
         }
         
-        _remove(index) {
-            var $items = this.$items.children()
-            $items.eq(index).html("").css("backgroundImage", "").appendTo(this.$items) // 因为这里写成$items导致了大问题
+        removeItem(item) {
+            return this.remove(this.items.indexOf(item))
         }
         
-        removeItem(item, process) {
-            if (data.items[item].stackable) {
-                return this.setStackableAmount(item, 0)
-            }
-            return this.remove(this.items.indexOf(item), process)
-        }
-        
-        _removeItem(item) {
-            this._remove(this.items.indexOf(item))
+        waitRemoveItem(item, process) {
+            process = process || this
+            process.wait(() => void this.removeItem(item))
         }
         
         use(index, battle) {
-            var item = this.remove(index, battle)
-            var itemData = data.items[item]
-            battle.log(itemData.name)
+            var item = this.items[index]
+            this.waitRemove(index, battle)
+            battle.log(item.name)
             // @ts-ignore
-            for (let each of itemData.use) {
+            for (let each of item.use) {
             	this.execute(each, battle)
             }
         }
         
         exp(id) {
+            this.cache()
         	this.$message.html("")
             this.experience.push(id)
             const story = data[this.chapter].story[id]
@@ -1368,7 +1643,7 @@
                 this.battle(story.battle, this)
             }
             if ("choice" in story) {
-                if ("to" in story) {
+                if ("to" in story) { // 选择一类
                     let length = story.choice.length
                     let choices = []
                     
@@ -1395,7 +1670,7 @@
                             this.exp(this.judgeArr(to))
                         }
                     }, story.fadeChoice)
-                } else {
+                } else { // 输入框一类，例如J12132的挂历谜题
                     this.wait(() => {
                         let $input = $("<input/>")
                             .attr("type", "text")
@@ -1443,6 +1718,14 @@
                     this.wait(() => this.exp(to))
                 } else if (Array.isArray(to)) {
                     this.wait(() => this.exp(this.judgeArr(to)))
+                } else if (to === true) {
+                    this.experience = []
+                    this.chapter++
+                    this.health = data[this.chapter].maxHealth
+                    this.cache()
+                    this.save()
+                    this.log("请重启游戏！")
+                    this.wait(() => location.reload())
                 } else {
                     this.log("敬请期待！")
                 }
@@ -1454,10 +1737,10 @@
             var tokens = command.split(" "), amount
             switch (tokens[0]) {
                 case "get":
-                	this.add(parseInt(tokens[1]), tokens[2] && parseInt(tokens[2]))
+                	this.waitGet(parseInt(tokens[1]), tokens[2] && parseInt(tokens[2]))
                 	break;
                 case "remove":
-                	this.remove(this.items.indexOf(parseInt(tokens[1])))
+                	this.removeItem(this.findItem(parseInt(tokens[1])))
                 	break;
                 case "health":
                 case "cm":
@@ -1506,6 +1789,9 @@
                 case "bridge":
                     this.bridge()
                     break;
+                case "floor":
+                    this.floor()
+                    break;
                 case "shop":
                     this.wait(() => this.shop(parseInt(tokens[1])))
                     break;
@@ -1540,10 +1826,10 @@
         }
         
         judge(condition) {
-            
             if (typeof condition === "number") {
                 return this.experience.includes(condition)
             } else if (typeof condition === "string") {
+                // 只包含数字的字符串等同于直接输入数字
                 if (/^[0-9]+$/.test(condition)) {
                     return this.experience.includes(parseInt(condition))
                 }
@@ -1564,18 +1850,32 @@
                     switch (prefix) {
                         case "r":
                             return this.R === number
+                        case "health":
                         case "h":
                             return this.health === number
+                        case "item":
                         case "i":
                             return this.has(number)
+                        case "armor":
                         case "a":
-                            return this.armor === number
+                            let armor = this.armor
+                            return armor !== undefined && armor.id === number
+                        case "weapon":
                         case "w":
-                            return this.weapon === number
+                            let weapon = this.weapon
+                            return weapon !== undefined && weapon.id === number
+                        case "cm":
                         case "c":
                             return this.cm >= number
+                        case "virtual":
                         case "v":
                             return this.virtualExperience.includes(number)
+                        case "attack":
+                        case "att":
+                            return this.attack >= number
+                        case "defence":
+                        case "def":
+                            return this.defence >= number
                         default:
                             throw new Error(`Illegal condition prefix '${prefix}'.`)
                     }
@@ -1584,11 +1884,12 @@
         }
         
         static isValidCondition(condition) {
-            return typeof condition === "number" || /^[richawv0-9&\|!]+$/.test(condition)
+            return typeof condition === "number" || /^[a-z0-9&\|!]+$/.test(condition)
         }
         
         judgeArr(arr) {
             var l = arr.length
+            // 合法条件表达式的第1个位置应该是合法条件字符串
             if (!Game.isValidCondition(arr[1])) {
                 return arr[randInt(0, l - 1)]
             }
@@ -1639,28 +1940,38 @@
                 }, this)
             }
         }
-        save() {
-            if (this.queue.owner !== 0) {
-                return void this.notify("战斗无法保存")
+        cache() {
+            
+            var items = []
+            var stackables = {}
+            for (let each of this.items) {
+                items.push(each.id)
+                if (each.stackable) {
+                    stackables[each.id] = each.amount
+                }
             }
-            var items = $.merge([], this.items)
             if (this.weapon) {
-                items.push(this.weapon)
+                items.push(this.weapon.id)
             }
             if (this.armor) {
-                items.push(this.armor)
+                items.push(this.armor.id)
             }
-        	var saveData = {
-        		health: this.health,
-        		items: items,
-        		experience: this.experience,
-                weapon: this.weapon,
-                armor: this.armor,
+            this.storage = {
+                health: this.health,
+                items: items,
+                experience: this.experience,
+                weapon: this.weapon ? this.weapon.id : null,
+                armor: this.armor ? this.armor.id: null,
                 cm: this.cm,
-                stackables: this.stackables,
-                virtual: this.virtualExperience
-        	}
-        	localStorage.gameData = JSON.stringify(saveData)
+                stackables: stackables,
+                virtual: this.virtualExperience,
+                chapter: this.chapter
+            }
+        }
+        
+        save() {
+            
+        	localStorage.gameData = JSON.stringify(this.storage)
             this.notify("保存成功")
         }
         
@@ -1692,32 +2003,39 @@
                 }
                 let $attack = $("<div/>").appendTo(this.$battle)
                 let $input = $("<input/>").attr("type", "text").appendTo($attack).on("keypress", e => {if (e.which === 13) dodge()})
-                if (this.settings.get("random")) {
-                    let str = []
+                if (this.settings.get("random")) { // 自动装填
+                    let str = [] // 字符串中的字符ASCII码
                     for (let i = 0; i < 5; i++) {
-                        str.push(65 + Math.floor(Math.random() * 4)) 
+                        str.push(randInt(65, 68)) 
                     }
-                    $input.val(String.fromCharCode(...str))
+                    $input.val(String.fromCharCode(...str)) // 解构
                 }
                 // @ts-ignore
-                let $button = Game.button().html("攻击！").appendTo($attack).on("click", () => dodge())
+                let $button = Game.button("攻击！").appendTo($attack).on("click", () => dodge())
             })
         }
-        bridge() {
-            this.log("选择一座桥以通过")
-            const makeBridge = () => this.Process((process) => process.choose(["A", "B", "C"], ( ch) => {
+        bridge(floor = false) {
+            var length = floor ? 4 : 3
+            var type = floor ? "地板" : "桥"
+            this.log(`选择一${floor ? '条路线' : '座桥'}以通过`)
+            var bridges = []
+            for (let i = 0; i < length; i++) {
+                bridges.push(String.fromCharCode(65 + i))
+            }
+            this.waitChoose(this, bridges, (ch, p, rechoose) => {
                 var noBridge = Math.floor(Math.random() * 3)
-                var bridges = ["A", "B", "C"]
+                var formedBridges = Array.from(bridges)
                 if (ch === noBridge) {
-                    bridges.splice(noBridge, 1)
-                    process.log(`翻转地板组成了桥${bridges.join()}，你没通过桥！`)
-                    process.die(makeBridge())
+                    formedBridges.splice(noBridge, 1)
+                    p.log(`翻转地板组成了${type + formedBridges.join()}，你没通过${type}！`)
+                    return rechoose()
                 } else {
-                    process.log("你通过了桥！")
-                    process.die(this)
+                    p.log(`你通过了${type}！`)
                 }
-            })).go()
-            this.wait(() => makeBridge())
+            })
+        }
+        floor() {
+            return this.bridge(true)
         }
         
         shop(id) {
@@ -1742,16 +2060,16 @@
                     if (ch === leaveKey) {
                         return p.die(this)
                     }
-                    if (this.items.length === this.max) {
-                        p.log("背包空间不够，你离开了商店")
-                        return p.die()
-                    }
                     var bought = parseInt(itemIds[ch])
+                    if (this.itemsFull(bought)) {
+                        p.log("背包空间不够，你离开了商店")
+                        return p.waitDie(this)
+                    }
                     if (prices[bought] > this.cm) {
                         p.log("你的CM币不够！")
                     } else {
                         this.cm -= prices[bought]
-                        this.add(bought, 1, p)
+                        this.waitGet(bought, 1, p)
                     }
                     p.wait(() => p.die(shop()))
                 })
@@ -1764,17 +2082,18 @@
         }
         die() {
             this.log("黑暗再次降临。")
-            if (this.has(2)) {
+            if (this.has(LOVECA)) {
                 this.log("使用复活爱心吗?")
                 this.choose(["是", "否"], (ch) => {
                     if (!ch) {
-                        this.setStackableAmount(2, this.stackables[2] - 1)
+                        this.findItem(LOVECA).amount--
                         this.health = 100
                         this.log("那么，你将再次驱散黑暗")
                     } else {
                         this.log("看来，黑暗将会再度笼罩你")
                         this.log("You died.")
                         delete localStorage.gameData
+                        delete this.queue
                     }
                 })
             } else {
@@ -1785,126 +2104,24 @@
                 delete this.queue
             }
         }
-        // @ts-ignore
-        get settings() {
-        	var settings
-        	var defaultSettings = {
-        		speed: 1500,
-                pass: false
-        	}
-        	function getSettings() {
-        		settings = localStorage.ateSettings ? JSON.parse(localStorage.ateSettings) : defaultSettings
-        	}
-        	
-        	function setItem(item, val) {
-        		settings[item] = val
-        		localStorage.ateSettings = JSON.stringify(settings)
-        		getSettings()
-        	}
-        	getSettings()
-            
-        	return {
-        		
-        		get(prop) {
-                    return settings[prop]
-                },
-                
-                set(prop, val) {
-                    setItem(prop, val)
-                },
-                
-                toggle(prop) {
-                    setItem(prop, !settings[prop])
-                }
-        	}
-        }
-        settingsMenu() {
-            if ($(".ate-settings").length > 0) { 
-                // 阻止生成多个设置窗口
-                return
-            }
-            var $window = $("<div/>")
-                .addClass("ate-settings")
-                .appendTo(this.$interface)
-            // 半透明灰遮罩阻止用户在关闭之前操作游戏
-            var $cover = $("<div/>")
-                .addClass("ate-cover")
-                .appendTo(this.$interface) 
-            var $list = $("<ul/>").appendTo($window)
-
-
-            var $speed = $("<input>")
-                .attr("type", "text")
-                .val(this.settings.get("speed"))
-                .appendTo($("<li/>").html("消息播放时间/ms").appendTo($list))
-            
-            var pass = this.settings.get("pass")
-            var $pass = Game.button(pass && "on")
-                .html(pass ? "是" : "否")
-                .appendTo($("<li/>").html("无选项自动跳剧情").appendTo($list))
-            $pass.on("click", () => {
-                $pass.html(this.settings.get("pass") ? "否" : "是")
-                this.settings.toggle("pass")
-                $pass.toggleClass("ate-button-on")
-            })
-
-            var random = this.settings.get("random")
-            var $random = Game.button(random && "on")
-                .html(random ? "是" : "否")
-                .appendTo($("<li/>").html("战斗攻击自动填入").appendTo($list))
-            $random.on("click", () => {
-                $random.html(this.settings.get("random") ? "否" : "是")
-                this.settings.toggle("random")
-                $random.toggleClass("ate-button-on")
-            })
-
-            if (this.history) {
-                Game.button("negative").html("清档").appendTo($window).on("click", () => {
-                    delete localStorage.gameData
-                    this.notify("存档已清除！")
-                })
-                $window.append("<div>历史记录：</div>")
-                var $history = $("<ol/>").addClass("ate-history").appendTo($window)
-                for (let each of this.history) {
-                    $("<li/>").html(each).appendTo($history)
-                }
-            }
-            var store = btoa(localStorage.gameData || "")
-            var $export = $("<textarea/>")
-                .val(store)
-                .appendTo($window)
-            $("<div/>").addClass("ate-settings-done").appendTo($window).on("click", () => {
-                const SPEED_VAL = $speed.val()
-                if (typeof SPEED_VAL !== "string") {
-                    throw new Error("$speed.val() is a str")
-                }
-                if (SPEED_VAL.match(/^\d+$/)) {
-                    this.settings.set("speed", parseInt(SPEED_VAL))
-                }
-                const IMPORT_VAL = $export.val()
-                if (typeof IMPORT_VAL !== "string") {
-                    throw new Error("$speed.val() is a str")
-                }
-                if (IMPORT_VAL !== store) {
-                    localStorage.gameData = atob(IMPORT_VAL)
-                }
-                $window.animate({left: "-100%"}, 3000, () => $window.remove())
-                $cover.remove()
-            })
-        }
         
         static clear() {
             return $("<div/>").css("clear", "both")
         }
         
-        addImage($ele, id) {
-            if (id < this.itemImages.length) {
-                $ele.css("backgroundImage", `url(${this.itemImages[id]})`)
+        addImage($ele, item) {
+            if (item instanceof Item) {
+                item = item.id
+            }
+            if (item < this.itemImages.length) {
+                $ele.css("backgroundImage", `url(${this.itemImages[item]})`)
             }
         }
         
         achieve(id) {
-            if (this.achievements.includes(id)) return
+            if (this.achievements.includes(id)) {
+                return
+            }
             var achievement = data.achievement[id]
             var $achivement = $("<div/>").addClass("ate-achievement")
             this.$interface.append($achivement)
@@ -1935,9 +2152,17 @@
             }
         }
         
-        static button(cls) {
-            var $button = $("<div/>").addClass("ate-button")
-            return $button.addClass("ate-button-" + cls)
+        static button(text, options) {
+            var $button = $("<div/>").addClass("ate-button").html(text)
+            if (options) {
+                if (options.cls) {
+                    $button.addClass("ate-button-" + options.cls)
+                }
+                if (options.title) {
+                    $button.attr("title", options.title)
+                }
+            }
+            return $button
         }
         
         notify(msg) {
@@ -1956,10 +2181,16 @@
         
         waitChoose(process, choices, func) {
             this.waitProcess(process, (p) => {
-                p.choose(choices, ch => {
-                    func(ch, process, func)
-                    p.die(process)
-                })
+                const choosing = () => {
+                    p.choose(choices, ch => {
+                        let ret = func(ch, p, choosing)
+                        if (ret !== true) {
+                            p.die(process)
+                        }
+                    })
+                    return true;
+                }
+                choosing()
             })
         }
         
@@ -1986,5 +2217,5 @@
     	$("#firstHeading").html(`--- Extend Air Ticket v ${version} ---`)
         $("#version").html(version)
 
-})(jQuery, ateData, "2.12.1.32 Beta")
+})(jQuery, ateData, "2.13.0.4736 Beta")
 
