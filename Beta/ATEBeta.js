@@ -11,9 +11,20 @@
 (function ($, data, version) {
     const LOVECA = 2
     const SW0RD = 24
+    const H_3RD_ANN_CAKE = 44
+    const DESTROYER_LASER = 65
     
     function randInt(start, end) {
         return start + Math.floor(Math.random() * (end - start + 1))
+    }
+    
+    function intOrScope(str) {
+        if (str.startsWith("[") && str.endsWith("]")) {
+            let scope = str[2].slice(1,-1).split(",")
+            return randInt(parseInt(scope[0]), parseInt(scope[1]))
+        } else {
+            return parseInt(str)
+        }
     }
     class TableItem {
         
@@ -171,7 +182,7 @@
             
             this.$export = $("#ate-export")
             this.$doneButton = $(".ate-settings-done")
-            this.$speed = $("#ate-settings-speed")
+            this.$speed = $("#ate-settings-speed").val(this.get("speed"))
         }
         
         get(key) {
@@ -223,7 +234,7 @@
                 this.$cover.hide()
             })
             this.$cover.show()
-            this.$element.show()
+            this.$element.css("left", "").show()
         }
     }
     class Queue {
@@ -360,9 +371,15 @@
                 this.type = Item.BATTLE
             } else if ("attack" in itemData) {
                 this.attack = itemData.attack
+                if ("magic" in itemData) {
+                    this.magic = itemData.magic
+                }
                 this.type = Item.WEAPON
             } else if ("defence" in itemData) {
                 this.defence = itemData.defence
+                if ("dodgeRate" in itemData) {
+                    this.dodgeRate = itemData.dodgeRate
+                }
                 this.type = Item.ARMOR
             } else {
                 this.type = Item.NORMAL
@@ -378,6 +395,9 @@
         }
         // @ts-ignore
         set amount(val) {
+            if (val === 0) {
+                this.game.removeItem(this)
+            } 
             this.$amount.html(val + "")
             this._amount = val
         }
@@ -438,6 +458,8 @@
             this.$element = game.$battle
             
             this.after = after
+             
+            this.deferredCommands = {}
             this.$element.children().fadeOut() // CRD 战斗中短矛子战隐藏母战斗
             var enemyData = data.enemy[battleData.enemy]
             
@@ -548,7 +570,12 @@
             this.breakHarm = false
             
             this.roundEndCallback = []
-            if (this.game.armor && this.game.armor.id === 23) { // 混乱护盾
+            if (this.deferredCommands[this.rounds]) {
+                for (let command of this.deferredCommands[this.rounds]) {
+                    this.game.execute(command)
+                }
+            }
+            if (this.game.armor?.id === 23) { // 混乱护盾
                 this.game.execute("health + [3,20]")
             }
             switch (this.enemy.id) {
@@ -587,7 +614,6 @@
                             this.log('“呃……这样真的能击败它吗？”水晶说道。')
                             this.log('“Zero就不能用点什么手段吗……”一个骷髅抱怨道。')
                             this.log('“呃……对了！我看到这个木马的炮管，在平常的时候好像都是掩着的，说不定这就是它的弱点！Zero，它等下发动炮弹攻击的时候，你向炮管打去，看看会怎么样！”水晶说。')
-                            // @ts-ignore
                             this.enemyTable.gunHealth.show()
                             this.enemy.fixed = true
                         }
@@ -688,6 +714,10 @@
                         for (let index of battlables) {
                             // console.log(index, this.game.$items.eq(parseInt(index)))
                             this.game.$items.children().eq(index).css("boxShadow", "2px 2px 4px 4px #66ccff").on("click", () => {
+                                if (this.game.items[index].id === H_3RD_ANN_CAKE) {
+                                    this.game.achieve(4) // “大材小用”成就
+                                    // 真的有人能拿着蛋糕打短矛吗？
+                                }
                                 this.game.use(index, this)
                                 this.game.$items.children().css("boxShadow", "").off("click")
                                 p.waitDie(this)
@@ -1045,10 +1075,28 @@
                 this.tutorial = false // 退出教程
             } else if (typeof str === "string") {
                 let enemyDefense = Math.random() < this.enemy.defenseRate
-                let enemyDefence = enemyDefense ? this.enemy.defence : 0
+                let weapon = this.game.weapon
+                // 敌方防御且“我方武器为毁灭激光枪且魔法值足够”为假，则敌方防御有效，否则为0
+                let enemyDefence = enemyDefense && !(weapon?.id === DESTROYER_LASER && this.magic >= weapon.magic) ? this.enemy.defence : 0
+                let baseThis;
+                if (this.defense) {
+                    baseThis = 0
+                } else {
+                    baseThis = this.game.attack - enemyDefence
+                    // 耗魔武器
+                    let magic = weapon?.magic // 这符号真好用（
+                    if (magic) {
+                        if (this.magic >= magic) { // 足够则减去魔法值
+                            this.magic -= magic
+                        } else { // 不够则减去武器伤害
+                            baseThis -= this.game.weapon.attack
+                        }
+                    }
+                }
+                // 解构
                 let [hurt, letters, harm] = Battle.computeHurtHarm(
                     str, // 攻击方式
-                    this.defense ? 0 : (this.game.attack - enemyDefence), // 己方单伤害
+                    baseThis, // 己方单伤害
                     this.enemy.attack, // 敌方原始伤害
                     this.defense, // 是否防御
                     this.game.defence, // 己方防御值
@@ -1056,6 +1104,9 @@
                     this.enemy.id === 13 && this.heavyAttack ? 0.3 : 0, // 破甲率
                     this
                     )
+                if (this.game.dodgeRate && Math.random() <= this.game.dodgeRate) {
+                    hurt = 0 // 闪避直接0伤
+                }
                 this.log(`你的攻击是${str}，对方的攻击是${letters}`)
                 if (enemyDefense) {
                     this.log(`${this.enemy.name}选择了防御。`)
@@ -1231,7 +1282,12 @@
                 $sw0rd.fadeOut(1000)
             }, 4000)
 
-            $(document).one("click", () => document.getElementById("music").play())
+            $(document).one("click", () => {
+                document.getElementById("music").play()
+                if (Element.prototype.requestFullscreen) {
+                    document.documentElement.requestFullscreen({navigationUI: "hide"})
+                }
+            })
             this.itemImages = []
             for (let each of data.items) {
                 this.itemImages.push("./images/" + each.id + ".png")
@@ -1301,6 +1357,7 @@
             this.dead = false
         	this.attack = 15
             this.defence = 0
+            this.dodgeRate = 0
             var localStorage = window.localStorage
             if (localStorage.gameData) {
                 this.storage = JSON.parse(localStorage.gameData)
@@ -1451,7 +1508,6 @@
                     window.clearInterval(this.timer.id)
                     this.attack -= this.timer.lastAdd
                 } else {
-                    // @ts-ignore
                     this.attack -= old.attack
                 }
                 old.$element.insertBefore(this.findBlankItem())
@@ -1487,16 +1543,21 @@
             var old = this._armor
             this._armor = armor
             if (old) {
-                // @ts-ignore
                 this.defence -= old.defence
+                if (old.dodgeRate) {
+                    this.dodgeRate -= old.dodgeRate
+                }
                 old.$element.insertBefore(this.findBlankItem())
                 this.items.push(old)
             } else if (armor.$element !== this.$armor) {
                 this.$armor.html("").appendTo(this.$items)
             }
             armor.$element.appendTo(this.$equipments)
-            // @ts-ignore
             this.defence += armor.defence
+            if (armor.dodgeRate) {
+                this.dodgeRate += armor.dodgeRate
+            }
+
         }
         // #endregion
         
@@ -1606,8 +1667,12 @@
         
         use(index, battle) {
             var item = this.items[index]
-            this.waitRemove(index, battle)
-            battle.log(item.name)
+            if (item.stackable) {
+                item.amount -= 1
+            } else {
+                this.waitRemove(index, battle)
+            }
+            battle.log(`你使用了${item.name}。`)
             // @ts-ignore
             for (let each of item.use) {
             	this.execute(each, battle)
@@ -1751,12 +1816,7 @@
                 	break;
                 case "health":
                 case "cm":
-                    if (tokens[2].startsWith("[") && tokens[2].endsWith("]")) {
-                        let scope = tokens[2].slice(1,-1).split(",")
-                        amount = parseInt(scope[0]) + Math.floor(Math.random() * (parseInt(scope[1]) - parseInt(scope[0]) + 1))
-                    } else {
-                        amount = parseInt(tokens[2])
-                    }
+                    amount = intOrScope(tokens[2])
                 	if (tokens[1] == "+") {
                 		this[tokens[0]] += amount
                 	} else if (tokens[1] == "-") {
@@ -1765,21 +1825,31 @@
                 	break;
                 case "attack":
                 case "defence":
-                    if (tokens[2].startsWith("[") && tokens[2].endsWith("]")) {
-                        let scope = tokens[2].slice(1,-1).split(",")
-                        amount = parseInt(scope[0]) + Math.floor(Math.random() * (parseInt(scope[1]) - parseInt(scope[0]) + 1))
-                    } else {
-                        amount = parseInt(tokens[2])
-                    }
-                    if (battle) {
+                case "dodgeRate":
+                    amount = intOrScope(tokens[2])
+                    // 第三个令牌，布尔类型，指定指令效果持续至战斗结束
+                    // 也就用了黑客三周年蛋糕这一次嘛（（（（
+                    let untilEnd = tokens[3] === "true" || tokens[3] === "1"
+                    if (battle && untilEnd) {
                         if (tokens[1] == "+") {
                             this[tokens[0]] += amount
-                            battle.roundEnd(() => {this[tokens[0]] -= amount})
+                            battle.after.wait(() => this[tokens[0]] -= amount)
                         } else if (tokens[1] == "-") {
                             this[tokens[0]] -= amount
-                            battle.roundEnd(() => {this[tokens[0]] += amount})
+                            battle.after.wait(() => this[tokens[0]] += amount)
+                        }
+                    } else if (battle) {
+                        if (tokens[1] == "+") {
+                            this[tokens[0]] += amount
+                            battle.roundEnd(() => this[tokens[0]] -= amount)
+                        } else if (tokens[1] == "-") {
+                            this[tokens[0]] -= amount
+                            battle.roundEnd(() => this[tokens[0]] += amount)
                         }
                     } else {
+                        if (untilEnd) {
+                            console.warn("No battle. Don't use the third argument [untilEnd].")
+                        }
                         if (tokens[1] == "+") {
                             this[tokens[0]] += amount
                         } else if (tokens[1] == "-") {
@@ -1808,12 +1878,7 @@
                 case "edefence":
                 case "eattack":
                     let prop = tokens[0].slice(1)
-                    if (tokens[2].startsWith("[") && tokens[2].endsWith("]")) {
-                        let scope = tokens[2].slice(1,-1).split(",")
-                        amount = parseInt(scope[0]) + Math.floor(Math.random() * (parseInt(scope[1]) - parseInt(scope[0]) + 1))
-                    } else {
-                        amount = parseInt(tokens[2])
-                    }
+                    amount = intOrScope(tokens[2])
                 	if (tokens[1] == "+") {
                 		battle.enemy[prop] += amount
                         battle.roundEnd(() => {battle.enemy[prop] -= amount})
@@ -1824,6 +1889,11 @@
                     break;
                 case "experience":
                     this.virtually(parseInt(tokens[1]))
+                    break;
+                case "defer":
+                    let round = battle.rounds + parseInt(tokens[1]) // 第一个令牌表示延迟的回合数
+                    battle.deferredCommands[round] = battle.deferredCommands[round] ?? [] // 若无则创建一个
+                    battle.deferredCommands[round].push(tokens.slice(2).join(" ")) // 剩余令牌作为指令传入
                     break;
                 case "sleep":
                     break;
@@ -2224,5 +2294,5 @@
     	$("#firstHeading").html(`--- Extend Air Ticket v ${version} ---`)
         $("#version").html(version)
 
-})(jQuery, ateData, "2.13.0.4736 Beta")
+})(jQuery, ateData, "2.14.0.377 Beta")
 
