@@ -1264,6 +1264,24 @@
             this.$interface = $(".ate-interface")
             this.settings = new Settings(this)
             this.$settings = Game.button("设置").on("click", () => this.settings.open()).appendTo(this.$interface)
+
+            if (Element.prototype.requestFullscreen) {
+                let on = false
+                // 使用监听全屏的方式，而不是在点击是切换状态变量on。
+                // 这样，如果用户按 ESC 退出也照样能够更新文字。
+                $(document).on("fullscreenchange", () => {
+                    on = !on
+                    this.$fullscreen.html(on ? "退出全屏" : "全屏模式")
+                })
+                this.$fullscreen = Game.button("退出全屏").on("click", () => {
+                    if (!on) {
+                        document.documentElement.requestFullscreen({navigationUI: "hide"})
+                    } else {
+                        document.exitFullscreen()
+                    }
+                }).appendTo(this.$interface)
+            }
+
             var $enter = $("<div/>").addClass("ate-enter").html("Extend Air Ticket<div>Click to start</div>").prependTo(this.$interface).one("click", () => {
                 $enter.fadeOut(1000, () => {
                     $enter.remove()
@@ -2294,5 +2312,5 @@
     	$("#firstHeading").html(`--- Extend Air Ticket v ${version} ---`)
         $("#version").html(version)
 
-})(jQuery, ateData, "2.14.0.377 Beta")
+})(jQuery, ateData, "2.14.0.1847 Beta")
 
