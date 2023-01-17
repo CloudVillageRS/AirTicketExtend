@@ -22,54 +22,72 @@
     <body>
         <audio id="music" loop preload="auto" src="/Restless Nightmare.mp3"></audio>
         <div class="ate-interface">
-            <div id="author">(<a href="https://github.com/CloudVillageRS/AirTicketExtend">Repo</a>) Extend Air Ticket / Air Ticket Extend <span id="version"></span> <span style="font-weight: bold;">Code</span> by <a href="https://zes-minkey-young.github.io">Zes M Young</a></div><div class="ate-settings">
-                <div class="ate-settings-header">
-                    <div class="ate-settings-tag ate-settings-tag-show">基本设置</div>
-                    <div class="ate-settings-tag">关于</div>
-                    <div class="ate-settings-tag">更新日志</div>
-                    <div class="ate-settings-done"></div>
+            <div id="author">(<a href="https://github.com/CloudVillageRS/AirTicketExtend">Repo</a>) Extend Air Ticket / Air Ticket Extend <span id="version"></span> <span style="font-weight: bold;">Code</span> by <a href="https://zes-minkey-young.github.io">Zes M Young</a></div>
+        </div>
+        <div class="ate-settings">
+            <div class="ate-settings-header">
+                <div class="ate-settings-tag ate-settings-tag-show">基本设置</div>
+                <div class="ate-settings-tag">关于</div>
+                <div class="ate-settings-tag">更新日志</div>
+                <div class="ate-settings-done"></div>
+            </div>
+            <div class="ate-settings-inner">
+                <div class="ate-settings-page ate-settings-page-show">
+                    <ul>
+                        <li title="若设为0，则变为手动播放">消息播放时间/ms<input id="ate-settings-speed" type="text"></li>
+                        <li title="当无选项时，跳过“点按以继续”">无选项自动跳剧情<div id="ate-settings-pass" class="ate-button"></div></li>
+                        <li title="战斗输入框默认预留随机生成的五个字符">有名的骰子(beta)<div id="ate-settings-random" class="ate-button"></div></li>
+                    </ul>
+                    <div id="ate-settings-clear" class="ate-button ate-button-negative" title="清除存档">清档</div>
+                    <div>
+                        历史记录：
+                        <ol class="ate-history"></ol>
+                    </div>
+                    <textarea id="ate-export" title="存档数据，复制以导出"></textarea>
+                    <p>Tips:如果您进入游戏即卡在此界面，证明游戏脚本没有运行。如果您没有在浏览器设置中禁用JavaScript仍然卡在此界面，则可能是浏览器版本不支持。请尝试更换。</p>
+                    <p>如要转移数据，请复制上面文本框。</p>
                 </div>
-                <div class="ate-settings-inner">
-                    <div class="ate-settings-page ate-settings-page-show">
-                        <ul>
-                            <li title="若设为0，则变为手动播放">消息播放时间/ms<input id="ate-settings-speed" type="text"></li>
-                            <li title="当无选项时，跳过“点按以继续”">无选项自动跳剧情<div id="ate-settings-pass" class="ate-button"></div></li>
-                            <li title="战斗输入框默认预留随机生成的五个字符">有名的骰子(beta)<div id="ate-settings-random" class="ate-button"></div></li>
-                        </ul>
-                        <div id="ate-settings-clear" class="ate-button ate-button-negative" title="清除存档">清档</div>
-                        <div>
-                            历史记录：
-                            <ol class="ate-history"></ol>
-                        </div>
-                        <textarea id="ate-export" title="存档数据，复制以导出"></textarea>
-                    </div>
-                    <div class="ate-settings-page">
-                        <p style="text-indent: 2em">
-                            Air Ticket Extend是由SW0RDGAME.EXE自主研发的一款基于<a href="https://cloudvillage.miraheze.org/wiki/">Cloud Village</a>和《滚动的天空》世界观的文字剧情选择游戏。
-                        </p>
-                        <p style="text-indent: 2em">
-                            原作为用Python开发的纯文字玩法。本作Air Ticket Extend 2（又称Extend Air Ticket）是其跨平台网页版，剧情与原作基本相同。本作是单机游玩模式，网络通信仅用于下载游戏内容，数据均储存在本地，但接入了百度访问量统计，可能会涉及某些访问数据。
-                        </p>
-                        <p style="text-indent: 2em">
-                            除本作外，Air Ticket Extend另有翻版Re: Air Ticket Extend。<a href="./reATE.zip">下载链接</a>
-                        </p>
-                    </div>
-                    <div class="ate-settings-page">
-                        <h1>2.13</h1>
-                        <ol>
-                            <li>更改“战斗攻击随机填入”设置项为“有名的骰子”。</li>
-                            <li>重构代码，修复了无法丢弃物品的bug。</li>
-                            <li>修复了无法使用红桃蛋糕的bug。</li>
-                            <li>按照玩家9Y的建议，设定播放时间为0时会变为手动播放。</li>
-                            <li>修改了缓存机制，修复刷物品bug。</li>
-                            <li>增加了设置页标签分页。</li>
-                        </ol>
-                    </div>
+                <div class="ate-settings-page">
+                    <p style="text-indent: 2em">
+                        Air Ticket Extend是由SW0RDGAME.EXE自主研发的一款基于<a href="https://cloudvillage.miraheze.org/wiki/">百度滚动的天空吧贴游《如果RS有机票 第二季》</a>世界观的文字剧情选择游戏。
+                    </p>
+                    <p style="text-indent: 2em">
+                        原作为用Python开发的纯文字玩法。本作Air Ticket Extend 2（又称Extend Air Ticket）是其跨平台网页版，剧情与原作基本相同。本作是单机游玩模式，网络通信仅用于下载游戏内容，数据均储存在本地，但接入了百度访问量统计，可能会涉及IP属地、访问时间等访问数据。本作使用Github pages构建。
+                    </p>
+                    <p style="text-indent: 2em">
+                        除本作外，Air Ticket Extend另有翻版Re: Air Ticket Extend。<a href="./reATE.zip">下载链接</a>
+                    </p>
+                </div>
+                <div class="ate-settings-page">
+                    <h1>2.13.2</h1>
+                    <ol>
+                        <li>为游戏中的部分敌人追加了一些技能。</li>
+                        <li>退化掉了部分代码以提升在较旧浏览器上的兼容度。</li>
+                    </ol>
+                    <h1>2.13.1</h1>
+                    <ol>
+                        <li>增加全屏模式，默认启用。在部分浏览器上可能存在定位偏移的问题。</li>
+                        <li>增加退出前提示保存的弹窗。</li>
+                    </ol>
+                    <h1>2.13</h1>
+                    <ol>
+                        <li>更改“战斗攻击随机填入”设置项为“有名的骰子”。</li>
+                        <li>重构代码，修复了无法丢弃物品的bug。</li>
+                        <li>修复了无法使用红桃蛋糕的bug。</li>
+                        <li>按照玩家9Y的建议，设定播放时间为0时会变为手动播放。</li>
+                        <li>修改了缓存机制，修复刷物品bug。</li>
+                        <li>增加了设置页标签分页。</li>
+                    </ol>
+                    <h1>2.12.1.32</h1>
+                    <ol>
+                        <li>更新了J12132剧情。</li>
+                        <li>修复了一些细节。</li>
+                    </ol>
                 </div>
             </div>
         </div>
         <script src="./ATESolo.min.js"></script>
     </body>
 </html>
-<!-- Extend Air Ticket 2.12+ -->
+<!-- Extend Air Ticket 2.13+ -->
 <!-- © 2022-2023 SW0RDGAME.EXE -->
