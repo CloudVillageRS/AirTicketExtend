@@ -1,7 +1,13 @@
+@font-face {
+	font-family: cmdysj;
+	src: url(./cmdysj.ttf);
+}
+
 html, body {
 	height: 100%;
 	width: 100%;
 	margin: 0;
+	font-family: "cmdysj";
 }
 
 .ate-interface {
@@ -24,28 +30,38 @@ html, body {
 	width: 13em;
 }
 
+
 .ate-items, .ate-equipments {
 	background-color: #ddd;
 	/* border: 0.2em black solid; */
 	box-sizing: border-box;
 	display: grid;
 	grid-template-columns: repeat(auto-fit, minmax(4.2em, 1fr));
+	grid-template-rows: 4em;
 	border-radius: 8px;
 }
 
-.ate-item, .ate-equipments > div {
+
+.ate-item {
 	background-color: silver;
 	/* border: 1px solid black; */
 	height: 4em;
 	width: 4em;
 	box-sizing: border-box;
     text-align: center;
-    color: aqua;
     background-repeat: no-repeat;
     background-position: center;
 	background-size: cover;
+	position: relative;
 	cursor: pointer;
 	border-radius: 8px;
+	grid-row: 1;
+}
+
+.ate-item .ate-item-amount {
+	position: absolute;
+	right: 0;
+	bottom: 0;
 }
 
 .ate-item-name {
@@ -56,11 +72,13 @@ html, body {
 
 
 .ate-item-description {
-    position: relative;
+    position: absolute;
+	bottom: 0;
+	right: 0;
 }
 .ate-item-description > div {
 	position: absolute;
-	z-index: 100;
+	z-index: 114514;
     width: 8em;
     background-color: #f8f9fa;
     color: black;
@@ -69,6 +87,7 @@ html, body {
 }
 .ate-item:hover .ate-item-description > div, .ate-equipments > div:hover .ate-item-description > div {
     display: block;
+	z-index: 114514;
 }
 
 .ate-choice {
