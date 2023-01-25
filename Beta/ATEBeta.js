@@ -5,13 +5,12 @@
 
 
 
-
-
-
 (function ($, data, version) {
     const LOVECA = 2
     const SW0RD = 24
+    const FROZEN_BREAD = 34
     const H_3RD_ANN_CAKE = 44
+    const BLOOD_STONE = 48
     const DESTROYER_LASER = 65
     
     function randInt(start, end) {
@@ -20,10 +19,59 @@
     
     function intOrScope(str) {
         if (str.startsWith("[") && str.endsWith("]")) {
-            let scope = str[2].slice(1,-1).split(",")
+            let scope = str.slice(1,-1).split(",")
             return randInt(parseInt(scope[0]), parseInt(scope[1]))
         } else {
             return parseInt(str)
+        }
+    }
+    class Input {
+        
+        constructor(game, chars, checkFn, processFn) {
+            this.$element = game.$input
+            this.$input = $("<input/>").attr("type", "text")
+                .appendTo(this.$element)
+                .on("keypress", (e) => {
+                    if (e.which === 13) {
+                        const VAL = this.getValue()
+                        if (!checkFn(VAL)) {
+                            return;
+                        }
+                        processFn(VAL, this)
+                    }
+                })
+            this.$shoot = Game.button("走你")
+                .appendTo(this.$element)
+                .on("click", () => {
+                    const VAL = this.getValue()
+                    if (!checkFn(VAL)) {
+                        return;
+                    }
+                    processFn(VAL, this)
+                })
+            for (let each of chars) {
+                Game.button(each, {margin: "10px", padding: "16px"})
+                    .appendTo(this.$element)
+                    .on("click", () => this.setValue(this.getValue() + each))
+            }
+            this.$element.append("<br>")
+                this.$clear = Game.button("清除", {cls: "negative"})
+                    .appendTo(this.$element)
+                    .on("click", () => this.setValue(""))
+        }
+        
+        setValue(val) {
+            this.$input.val(val)
+            return this
+        }
+        
+        getValue() {
+            // @ts-ignore
+
+            return this.$input.val()
+        }
+        remove(){
+            this.$element.html("")
         }
     }
     class TableItem {
@@ -130,7 +178,8 @@
             this.values = localStorage.ateSettings ? JSON.parse(localStorage.ateSettings) : {
         		speed: 1500,
                 pass: false,
-                random: false
+                random: false,
+                playwhenhidden: false
         	}
             this.opened = false
             this.hidden = true
@@ -156,7 +205,7 @@
                     this.$pages.eq(index).addClass("ate-settings-page-show")
                 })
             })
-            for (let key of ["pass", "random"]) {
+            for (let key of ["pass", "random", "playwhenhidden"]) {
                 let $btn = $("#ate-settings-" + key)
                 let val = this.get(key)
                 if (val) {
@@ -172,13 +221,6 @@
                 delete localStorage.gameData
                 this.game.notify("存档已清除！")
             })
-            // 播放过的消息
-            if (this.game.history) {
-                var $history = $(".ate-history")
-                for (let each of this.game.history) {
-                    $("<li/>").html(each).appendTo($history)
-                }
-            }
             
             this.$export = $("#ate-export")
             this.$doneButton = $(".ate-settings-done")
@@ -195,7 +237,7 @@
         }
         
         toggle(key) {
-            this.set(this.get(key))
+            this.set(key, !this.get(key)) // 我是啥b
         }
         open() {
             if (!this.hidden) {
@@ -223,7 +265,11 @@
                     throw new Error("$sxport.val() is a str")
                 }
                 if (IMPORT_VAL !== storage) {
-                    localStorage.gameData = atob(IMPORT_VAL)
+                    try {
+                        localStorage.gameData = atob(IMPORT_VAL)
+                    } catch (e) {
+                        this.game.notify("存档不合法！")
+                    }
                 }
                 // 窗口往左飘走
                 this.$element.animate({left: "-100%"}, 3000, () => {
@@ -233,6 +279,13 @@
                 // 移除遮罩
                 this.$cover.hide()
             })
+            // 播放过的消息
+            if (this.game.history) {
+                var $history = $(".ate-history").html("")
+                for (let each of this.game.history) {
+                    $("<li/>").html(each).appendTo($history)
+                }
+            }
             this.$cover.show()
             this.$element.css("left", "").show()
         }
@@ -297,6 +350,9 @@
         give(process) {
             
             this.owner = process.id
+            if (process.dead) {
+                return;
+            }
             if (!(this.arrays[process.id])) {
                 this.arrays[process.id] = []
             }
@@ -318,6 +374,7 @@
     
     Queue.registeredOwners = []
     Queue.curid = 0
+    // 不用public static field，兼容性不好（
     class Process {
         
         constructor(func, game) {
@@ -348,6 +405,8 @@
         
         die(after) {
             this.dead = true
+            delete Queue.registeredOwners[this.id]
+            // 使GC正确执行（
             if (after) this.game.queue.give(after)
         }
         
@@ -368,6 +427,9 @@
             if ("battle" in itemData && itemData.battle) {
                 this.battle = true
                 this.use = itemData.use
+                if ("cd" in itemData) {
+                    this.cd = itemData.cd
+                }
                 this.type = Item.BATTLE
             } else if ("attack" in itemData) {
                 this.attack = itemData.attack
@@ -393,12 +455,18 @@
         get amount() {
             return this._amount
         }
+        
         // @ts-ignore
         set amount(val) {
+            if (this.id === BLOOD_STONE) {
+                this.game.defence += val - this._amount
+            }
             if (val === 0) {
                 this.game.removeItem(this)
-            } 
-            this.$amount.html(val + "")
+                return
+            }
+            this.$descriptionAmount.html(val + "")
+            this.$amount.html(val === 1 ? "" : val + "")
             this._amount = val
         }
         
@@ -412,8 +480,11 @@
             console.log("test", $element, $des)
             if (this.stackable) {
                 this.$amount = $("<span/>")
+                    .addClass("ate-item-amount")
+                    .appendTo(this.$element)
+                this.$descriptionAmount = $("<span/>")
                 $desDiv.append("<br>你有")
-                    .append(this.$amount)
+                    .append(this.$descriptionAmount)
                     .append("个")
             }
             if (this.type == Item.ARMOR && this.game.armor !== this
@@ -460,43 +531,33 @@
             this.after = after
              
             this.deferredCommands = {}
-            this.$element.children().fadeOut() // CRD 战斗中短矛子战隐藏母战斗
-            var enemyData = data.enemy[battleData.enemy]
             
             this.won = false
             
             this.afterWin = battleData.win
-            this.enemyTable = new Table("ate-enemy-table", enemyData.name).appendTo(this.$element)
-
-            this.enemyTable.add("health", "HP", enemyData.health, "red")
-            this.enemyTable.add("gunHealth", "炮筒", 5, "orange", true)
-            this.enemyTable.add("chaos", "混沌", 120, "linear-gradient(red, grey)", true)
-            this.enemyTable.add("rules", "规则度", 100, "linear-gradient(orange, grey)", true)
-            this.enemy = new Enemy(enemyData, this)
+            this.$element.children().fadeOut() // CRD 战斗中短矛子战隐藏母战斗
+            var enemy = battleData.enemy
+            if (Array.isArray(enemy)) {
+                this.multiEnemy = true
+            } else {
+                enemy = [enemy]
+            }
+            this.aliveEnemyAmount = enemy.length
+            this.enemy = []
+            for (let each of enemy) {
+                let enemyData = data.enemy[each]
+                let thisEnemy = new Enemy(enemyData, this)
+                this.enemy.push(thisEnemy)
+            }
             
             this.zeroTable = new Table("ate-zero-table", "Zero").appendTo(this.$element)
             this.zeroTable.add("magic", "魔法值", 100, "purple")
-            this.game.$interface.addClass("battling")
+            this.game.toggleExpand()
             
             this.magic = 0
             
-            this.rounds = 0
-            switch (this.enemy.id) {
-                case 14:
-                    this.enemyTable.chaos.show()
-                    this.chaos = 0
-                    
-                    this.chaoAttacked = false
-                    break;
-                case 17: //罗尔斯
-                    this.enemyTable.rules.show()
-                    this.rules = 0
-                    this.talked = false
-                    this.intenseFight = false
-                    break;
-                default:
-                    break;
-            }
+            this.rounds = 0;
+            this.intenseFight = null;
         }
         
         win() {
@@ -511,9 +572,8 @@
                 }
             }
             
-            this.game.$interface.removeClass("battling")
+            this.game.toggleExpand()
             setTimeout(() => {
-                this.enemyTable.remove()
                 this.zeroTable.remove()
             }, 2000)
             
@@ -568,109 +628,39 @@
             
             this.fightTimes = 1
             this.breakHarm = false
+            this.frozenBreadUsed = false
             
             this.roundEndCallback = []
             if (this.deferredCommands[this.rounds]) {
                 for (let command of this.deferredCommands[this.rounds]) {
-                    this.game.execute(command)
+                    this.game.execute(command, this)
                 }
             }
-            if (this.game.armor?.id === 23) { // 混乱护盾
+            if (this.game.armor && this.game.armor.id === 23) { // 混乱护盾
                 this.game.execute("health + [3,20]")
             }
-            switch (this.enemy.id) {
-                case 7: // CRD
-                    if (this.rounds === 9) {
-                        
-                        this.log("CRD：“什么？！你们居然还能挺得住，看来我要动用增援了！”")
-                        this.wait(() => {
-                            this.log("第一个短矛向你袭来")
-                            return this.game.battle(8, this)
-                        })
-                        this.wait(() => {
-                            this.log("第二个短矛向你袭来")
-                            return this.game.battle(8, this)
-                        })
+            for (let enemy of this.enemy) {
+                enemy.round()
+                if (enemy.message) {
+                    let message = enemy.message
+                    
+                    if (typeof message[0] !== "string") {
+                        message = this.game.judgeArr(message)
                     }
-                    break;
-                case 8: // 长矛
-                    if (this.rounds === 6) {
-                        this.game.achieve(2)
-                    }
-                    break;
-                case 10: // 鹿法师
-                case 11:
-                    if (this.rounds % 5 === 4) {
-                        this.log("鹿法师使用了火魔法！ATT暂时提升5点")
-                        this.enemy.attack += 5
-                        this.roundEnd(() => this.enemy.attack -= 5)
-                    }
-                    break;
-                case 13: // 机械木马
-                    if (this.enemy.health < 400) {
-                        this.log('机械木马的HP降低了！')
-                        this.log('机械木马使用了【自我修复】！机械木马的HP回升了70点！')
-                        if (this.enemy.fixed == false) {
-                            this.log('“呃……这样真的能击败它吗？”水晶说道。')
-                            this.log('“Zero就不能用点什么手段吗……”一个骷髅抱怨道。')
-                            this.log('“呃……对了！我看到这个木马的炮管，在平常的时候好像都是掩着的，说不定这就是它的弱点！Zero，它等下发动炮弹攻击的时候，你向炮管打去，看看会怎么样！”水晶说。')
-                            this.enemyTable.gunHealth.show()
-                            this.enemy.fixed = true
-                        }
-                        this.enemy.health += 70
-                    }
-                    if (this.heavyAttack = this.rounds % 5 === 4) {
-                        this.log("机械木马正在准备一发重型火力攻击。")
-                        this.enemy.attack += 20
-                        this.roundEnd(() => this.enemy.attack -= 20)
-                    } else if (this.rounds % 5 === 0 && this.rounds > 0) {
-                        this.log("机械木马正在准备一发散弹攻击！")
-                        this.fightTimes = 2
-                    }
-                    break;
-                case 17:
-                    let raa = 10
-                    if (this.intenseFight == true) {
-                        raa = 5
-                    }
-                    if (this.defense) {
-                        raa = Math.floor(raa / 2)
-                    }
-                    if (randInt(1, raa) == 1) {
-                        this.log("罗尔斯举起了重剑！罗尔斯的攻击力提高了！")
-                        this.enemy.attack += 10
-                        this.roundEnd(() => this.enemy.attack -= 10)
-                        this.breakHarm = true
-                    }
-                    if (randInt(1, raa) == 1) {
-                        let poker = randInt(10, 35)
-                        this.game.health -= poker
-                        this.log(`罗尔斯使用了一发扑克散弹,你受到了${poker}点伤害！`)
-                    }
-                    this.enemy.attack += 5
-                    this.roundEnd(() => this.enemy.attack -= 5)
-                default:
-                    break
-            }
-            if (this.enemy.message) {
-                let message = this.enemy.message
-                
-                if (typeof message[0] !== "string") {
-                    message = this.game.judgeArr(message)
-                }
-                let r = Math.floor(Math.random() * (message.length + 1))
-                if (r < message.length) {
-                    let messageArray = message[r].split(";")
-                    for (let each of messageArray) {
-                        if (each.startsWith("/")) {
-                            this.game.execute(each.slice(1), this)
-                        } else {
-                            this.log(each)
+                    let r = Math.floor(Math.random() * (message.length + 1))
+                    if (r < message.length) {
+                        let messageArray = message[r].split(";")
+                        for (let each of messageArray) {
+                            if (each.startsWith("/")) {
+                                this.game.execute(each.slice(1), this)
+                            } else {
+                                this.log(each)
+                            }
                         }
                     }
                 }
             }
-            this.prepareChoose()
+            this.wait(() => this.prepareChoose())
         }
         
         prepareChoose() {
@@ -697,6 +687,10 @@
             }
             switch (ch) {
                 case 0:
+                    if (this.enemy[0].id === 6 && Math.random() < 0.5) {
+                        this.log("四面体向你的背包里发射了一颗能量球，你受到了15点伤害！")
+                        this.game.health -= 15
+                    }
                     
                     let battlables = []
                     for (let index in this.game.items) {
@@ -710,21 +704,21 @@
                         return this.prepareChoose()
                     }
                     this.log("选择一项物品。")
-                    this.game.waitProcess(this, (p) => {
+                    this.game.waitProcess(this, (itemSubProcess) => {
                         for (let index of battlables) {
                             // console.log(index, this.game.$items.eq(parseInt(index)))
                             this.game.$items.children().eq(index).css("boxShadow", "2px 2px 4px 4px #66ccff").on("click", () => {
-                                if (this.game.items[index].id === H_3RD_ANN_CAKE) {
+                                if (this.enemy[0].id === 8 && this.game.items[index].id === H_3RD_ANN_CAKE) {
                                     this.game.achieve(4) // “大材小用”成就
                                     // 真的有人能拿着蛋糕打短矛吗？
                                 }
-                                this.game.use(index, this)
+                                this.game.use(index, this, itemSubProcess)
                                 this.game.$items.children().css("boxShadow", "").off("click")
-                                p.waitDie(this)
+                                itemSubProcess.waitDie(this)
                             })
                         }
                     })
-                    if (this.enemy.id === 17) {
+                    if (this.enemy[0].id === Enemy.LORCE) {
                         this.rules += randInt(2, 5)
                     }
                     break;
@@ -739,7 +733,7 @@
                         this.log("你的魔法值不够！")
                         return this.prepareChoose()
                     }
-                    if (this.enemy.id === 17) {
+                    if (this.enemy[0].id === 17) {
                         this.magicChooseForLorce()
                         break;
                     }
@@ -749,8 +743,8 @@
                     this.log("你选择了跳过。")
             }
             // 隐藏boss J12132特殊技能
-            if (this.enemy.id === 14 && !this.defense) { // 大招
-                if (this.chaoAttacked == false && (this.chaos >= 85 || this.enemy.health <= 1400)) {
+            if (this.enemy[0].id === 14 && !this.defense) { // 大招
+                if (this.chaoAttacked == false && (this.chaos >= 85 || this.enemy[0].health <= 1400)) {
                     this.log('混沌持续上升！战斗已经进入白热化！')
                     this.log('现在，你需要独自一人面对考验')
                     this.log('J12132正在释放一次“混沌冲击！”')
@@ -758,10 +752,10 @@
                     this.octahedron = false
                     this.chaoAttacked = true
                     this.fightTimes = 2
-                    this.enemy.attack += 5
+                    this.enemy[0].attack += 5
                     this.game.virtually(12133)
                     this.roundEnd(() => {
-                        this.enemy.attack -= 5
+                        this.enemy[0].attack -= 5
                     })
                 } else { // 每回合若不选防御随机触发一个技能
                     switch (Math.floor(Math.random() * 4)) {
@@ -770,7 +764,7 @@
                             this.game.waitChoose(this, ["进攻", "诅咒"], ch => {
                                 if (ch == 0) {
                                     this.chaos += randInt(3,5)
-                                    this.enemy.health += randInt(10,50)
+                                    this.enemy[0].health += randInt(10,50)
                                 } else {
                                     this.log('你诅咒小丑的治疗法术，小丑的法术失效了！')
                                     this.chaos += 1
@@ -810,8 +804,8 @@
                             this.game.waitChoose(this, ["进攻", "闪躲"], ch => {
                                 if (ch == 0) {
                                     this.chaos += randInt(2,3)
-                                    this.enemy.attack += 5
-                                    this.roundEnd(() => this.enemy.attack -= 5)
+                                    this.enemy[0].attack += 5
+                                    this.roundEnd(() => this.enemy[0].attack -= 5)
                                 } else {
                                     this.log('你拼命闪躲着炸弹，你的防御增加了！同时攻击减少了')
                                     this.chaos += randInt(3,5)
@@ -825,8 +819,8 @@
                     }
                 }
             }
-            //
-            this.fightInput()
+            // 双层wait（
+            this.wait(() => this.fightInput())
         }
         
         magicChoose() {
@@ -835,7 +829,7 @@
             
             let magics = [`治疗魔法（${this.cureMagicCost}）`, "战斗魔法（70）", `黑暗魔法（${this.black ? "100" : "？"}）`]
             if (this.octahedron) { // 如果 几何八面体 enabled
-                magics.push("几何八面体（消耗全部魔法值造成一半伤害）")
+                magics.push(`几何八面体（${this.magic}）`)
             }
             this.game.waitChoose(this, magics, (magicType, process, rechoose) => {
                 switch (magicType) {
@@ -866,20 +860,20 @@
                             }
                             process.log("水晶被黑暗笼罩住了！黑暗法术增强了！")
                             this.magic = 0
-                            this.enemy.health = 0
+                            this.enemy[0].health = 0
                         } else {
                             process.log("l͓̩̫̘͙͔̯͖̟̤̓͊̑̌́̂̆̚ò̥̪̭̱̰̝̒͂̄͋̿̏͆́̚c͍̲͇͚̖̬͈̪͙̳͌̉́̃k̪̥̱̝̱̑̈́̏̽͗̊̈́͂̀̍e̞͎̩̜̱̩͚̤̊͌̀̀d̠̖̞̝̙̪̟̞̐͛̈̊̀͂̄͌̓̏͌̓ͅ")
                             return rechoose()
                         }
                         break;
                     case 3:
-                        if (this.enemy.id === 9) {
+                        if (this.enemy[0].id === 9) {
                             this.game.virtually(200)
                         }
                         let currentMagic = this.magic
                         this.magic = 0
-                        this.enemy.health -= currentMagic / 2
-                        process.log(`你选择了几何八面体，对【${this.enemy.name}】造成${currentMagic / 2}点伤害！`)
+                        this.enemy[0].health -= currentMagic / 2 // 未定，有名说团战打自己，对此我表示不认同（
+                        process.log(`你选择了几何八面体，对【${this.enemy[0].name}】造成${currentMagic / 2}点伤害！`)
                         break;
                     default:
                         throw new Error("非法输入")
@@ -896,15 +890,18 @@
                 this.talked = true
             }
             
-            let magics = ["超级治疗（60）", "规则防御（30）", "几何八面体（消耗全部魔法值造成一半伤害）"]
+            let magics = ["超级治疗（60）", "规则防御（30）"]
+            if (this.octahedron) {
+                magics.push(`几何八面体（${this.magic}）`)
+            }
             this.game.waitChoose(this, magics, (magicType, process, rechoose) => {
                 switch (magicType) {
                     case 0:
                         if (this.magic < 60) {
-                            this.log("你的魔法值不够！")
+                            process.log("你的魔法值不够！")
                             return rechoose()
                         }
-                        this.log("你试着用尽全力使出治疗法术……你的血量和攻击力增加了！")
+                        process.log("你试着用尽全力使出治疗法术……你的血量和攻击力增加了！")
                         this.game.health += 80
                         this.game.attack += 5
                         this.battleMagic = true
@@ -912,20 +909,20 @@
                         break;
                     case 1:
                         if (this.magic < 30) {
-                            this.log("你的魔法值不够！")
+                            process.log("你的魔法值不够！")
                             return rechoose()
                         }
-                        this.log("你使用了规则防御，罗尔斯的攻击降低了！罗尔斯的防御略微降低了！")
+                        process.log("你使用了规则防御，罗尔斯的攻击降低了！罗尔斯的防御略微降低了！")
                         this.magic -= 30
-                        this.enemy.attack -= 10
-                        this.roundEnd(() => this.enemy.attack += 10)
-                        this.enemy.defence -= 5
-                        this.roundEnd(() => this.enemy.defence += 5)
+                        this.enemy[0].attack -= 10
+                        this.roundEnd(() => this.enemy[0].attack += 10)
+                        this.enemy[0].defence -= 5
+                        this.roundEnd(() => this.enemy[0].defence += 5)
                         break;
                     case 2:
                         let currentMagic = this.magic
                         this.magic = 0
-                        this.enemy.health -= currentMagic / 2
+                        this.enemy[0].health -= currentMagic / 2
                         process.log(`你选择了几何八面体，对【罗尔斯】造成${currentMagic / 2}点伤害！`)
                         break;
                     default:
@@ -936,37 +933,25 @@
             })
         }
         
-        fightInput() {
+        fightInput(enemyIndex = 0) {
+            if (enemyIndex >= this.enemy.length) {
+                return;
+            }
+            if (this.enemy[enemyIndex].dead) {
+                return this.fightInput(enemyIndex + 1) // 直到找到没死的敌人
+            }
             this.wait( () => {
-                const attack = () => {
-                    
-                    // @ts-ignore
-                    let str = $input.val()
-                    if (!Battle.check5Capitals(str)) {
-                        return;
-                    }
-                    $attack.remove()
-                    this.fight(str)
-                }
-                let $attack = $("<div/>").appendTo(this.zeroTable.$outer)
-                let $input = $("<input/>")
-                    .attr("type", "text")
-                    .appendTo($attack)
-                    .on("keypress", e => {
-                        if (e.which === 13) {
-                            attack()
-                        }
-                    })
+                var input = new Input(this.game, ["A", "B", "C", "D"], Battle.check5Capitals, (str) => {
+                    input.remove()
+                    this.fight(str, enemyIndex)
+                })
                 if (this.game.settings.get("random")) {
                     let str = []
                     for (let i = 0; i < 5; i++) {
                         str.push(65 + Math.floor(Math.random() * 4)) 
                     }
-                    $input.val(String.fromCharCode(...str))
+                    input.setValue(String.fromCharCode(...str))
                 }
-                Game.button("攻击！")
-                    .appendTo($attack)
-                    .on("click", () => attack())
             })
         }
         
@@ -982,15 +967,12 @@
             return true
         }
         
-        static computeHurtHarm(str, baseThis, baseEnemy, defense, defence, game, breakRate, self) {
-            if (baseThis < 0) {
-                baseThis = 0
-            }
+        static computeHurtHarm(str, baseThis, baseEnemy, defense, defence, enemyDefence, game, breakRate, self) {
             if (baseEnemy < 0) {
                 baseEnemy = 0
             }
             var same; // 拉低复用性，差评！
-            if (self && self.enemy.id === 4) {
+            if (self && self.enemy[0].id === 4) {
                 if (self.rounds % 4 === 3) {
                     same = Math.floor(Math.random() * 4)
                 }
@@ -999,7 +981,24 @@
             for (let i = 0; i < 5; i++) {
                 let charThis = str.charCodeAt(i) - 65, charEnemy = same || Math.floor(Math.random() * 4), letter = String.fromCharCode(charEnemy + 65)
                 if (charThis == charEnemy - 1 || charThis == 3 && charEnemy == 0) {
-                    harm += baseThis
+                    let attack = baseThis
+                    let weapon = game.weapon
+                    let defence = enemyDefence
+                    if (!defense && weapon && weapon.magic) {
+                        if (self.magic >= game.weapon.magic) {
+                            self.magic -= game.weapon.magic
+                            if (weapon.id === DESTROYER_LASER) {
+                                defence = 0
+                            }
+                        } else {
+                            attack -= game.weapon.attack
+                        }
+                    }
+                    attack -= defence
+                    if (attack < 0 || defense) {
+                        attack = 0
+                    }
+                    harm += attack
                     Battle.charWithColor(str.charAt(i), game.$interface, defense ? 0 : 1, false, i * 10 + 30 + "%")
                     Battle.charWithColor(letter, game.$interface, -1, true, i * 10 + 30 + "%")
                 } else if (charEnemy == charThis - 1 || charEnemy == 3 && charThis == 0) {
@@ -1063,7 +1062,8 @@
             return $span
         }
         
-        fight(str) {
+        fight(str, enemyIndex = 0) {
+            let enemy = this.enemy[enemyIndex]
             if (this.tutorial && typeof str === "number") {
                 if (str === 0) {
                     this.magic += 40
@@ -1074,59 +1074,52 @@
                 }
                 this.tutorial = false // 退出教程
             } else if (typeof str === "string") {
-                let enemyDefense = Math.random() < this.enemy.defenseRate
+                let enemyDefense = Math.random() < enemy.defenseRate
                 let weapon = this.game.weapon
                 // 敌方防御且“我方武器为毁灭激光枪且魔法值足够”为假，则敌方防御有效，否则为0
-                let enemyDefence = enemyDefense && !(weapon?.id === DESTROYER_LASER && this.magic >= weapon.magic) ? this.enemy.defence : 0
-                let baseThis;
-                if (this.defense) {
-                    baseThis = 0
-                } else {
-                    baseThis = this.game.attack - enemyDefence
-                    // 耗魔武器
-                    let magic = weapon?.magic // 这符号真好用（
-                    if (magic) {
-                        if (this.magic >= magic) { // 足够则减去魔法值
-                            this.magic -= magic
-                        } else { // 不够则减去武器伤害
-                            baseThis -= this.game.weapon.attack
-                        }
-                    }
+                let enemyDefence = enemyDefense ? enemy.defence : 0
+                const BREAK_RATES = {
+                    13: 0.3,
+                    17: 0.6
                 }
                 // 解构
                 let [hurt, letters, harm] = Battle.computeHurtHarm(
                     str, // 攻击方式
-                    baseThis, // 己方单伤害
-                    this.enemy.attack, // 敌方原始伤害
+                    this.game.attack, // 己方单伤害
+                    enemy.attack, // 敌方原始伤害
                     this.defense, // 是否防御
+                    enemyDefence,
                     this.game.defence, // 己方防御值
                     this.game,
-                    this.enemy.id === 13 && this.heavyAttack ? 0.3 : 0, // 破甲率
+                    BREAK_RATES[enemy.id] || 0, // 破甲率
                     this
                     )
-                if (this.game.dodgeRate && Math.random() <= this.game.dodgeRate) {
-                    hurt = 0 // 闪避直接0伤
+                if (this.frozenBreadUsed || this.game.dodgeRate && Math.random() <= this.game.dodgeRate) {
+                    hurt = 0 // 闪避/冰冻面包直接0伤
                 }
                 this.log(`你的攻击是${str}，对方的攻击是${letters}`)
                 if (enemyDefense) {
-                    this.log(`${this.enemy.name}选择了防御。`)
+                    this.log(`${enemy.name}选择了防御。`)
                 }
                 this.log(`你受到${hurt}点伤害`)
                 this.game.health -= hurt
                 this.log(`你造成了${harm}点伤害`)
-                this.enemy.health -= harm
+                enemy.health -= harm
                 if (this.withXk) {
                     let xkHarm = enemyDefence < 20 ? 20 - enemyDefence : 0
                     this.log(`星空造成了${xkHarm}点伤害`)
-                    this.enemy.health -= xkHarm
+                    enemy.health -= xkHarm
                 }
                 this.fightTimes--
                 if (this.fightTimes > 0) {
                     return this.fightInput() // 散弹攻击打两次
                 }
-                if (this.enemy.fixed && this.heavyAttack && harm > 0) {
+                if (this.multiEnemy && enemyIndex + 1 !== this.enemy.length) {
+                    return this.fightInput(enemyIndex + 1)
+                }
+                if (enemy.fixed && this.heavyAttack && harm > 0) {
                     this.log("你朝炮筒攻打过去，机械木马开始松动了")
-                    this.enemy.gunHealth--
+                    enemy.gunHealth--
                 }
                 if (this.battleMagic) {
                     this.game.attack -= 5
@@ -1174,7 +1167,7 @@
         // @ts-ignore
         set rules(val) {
             this._rules = val
-            this.enemyTable.rules.set(val)
+            this.enemy[0].table.rules.set(val)
             if (val >= 100) {
                 this.log("战斗的规则摇晃着崩塌了")
                 this.win()
@@ -1186,7 +1179,7 @@
         }
         // @ts-ignore
         get black() {
-            return this.game.judge(1024) && this.enemy.id === 9
+            return this.game.judge(1024) && this.enemy[0].id === 9
         }
     }
     class Enemy {
@@ -1196,6 +1189,8 @@
             this.id = enemyData.id
             this.battle = battle
             this.game = battle.game
+            this.table = new Table("ate-enemy-table", enemyData.name).appendTo(this.battle.$element)
+            this.table.add("health", "HP", enemyData.health, "red")
             
             this.name = enemyData.name
             
@@ -1209,10 +1204,31 @@
             
             this.defenseRate = enemyData.defenseRate
             this.message = enemyData.message
-            if (this.id === 13) { // 机械木马
-                this.gunHealth = 5
-                
-                this.fixed = false
+            this.dead = false
+            
+
+            switch (this.id) {
+                case 13: // 机械木马
+                    this.table.add("gunHealth", "炮筒", 5, "orange", true)
+                    this.gunHealth = 5
+                    
+                    this.fixed = false
+                    break;
+                case 14:
+                    this.table.add("chaos", "混沌", 120, "linear-gradient(red, grey)", true)
+                    this.table.chaos.show()
+                    this.battle.chaos = 0
+                    
+                    this.battle.chaoAttacked = false
+                    break;
+                case 17: // 罗尔斯
+                    this.table.add("rules", "规则度", 100, "linear-gradient(orange, grey)", true)
+                    this.battle.rules = 0
+                    this.battle.talked = false
+                    this.battle.intenseFight = false
+                    break;
+                default:
+                    break;
             }
         }
         // @ts-ignore
@@ -1221,6 +1237,9 @@
         }
         // @ts-ignore
         set health(val) {
+            if (this.dead) {
+                return
+            }
             this._setHealth(val)
             if (this.id === 13) {
                 if (val <= 0) {
@@ -1235,14 +1254,18 @@
                 }
             }
             if (val <= 0) {
-                this.battle.win()
+                this.table.remove()
+                this.battle.aliveEnemyAmount--
+                this.dead = true
+                if (this.battle.aliveEnemyAmount === 0) {
+                    this.battle.win()
+                }
             }
         }
         
         _setHealth(val) {
             this._health = val
-            // @ts-ignore
-            this.battle.enemyTable.health.set(val)
+            this.table.health.set(val)
         }
         // @ts-ignore
         get gunHealth() {
@@ -1255,15 +1278,116 @@
                 this.battle.win()
             }
             this._gunHealth = val
-            this.battle.enemyTable.gunHealth.set(val)
+            this.table.gunHealth.set(val)
+        }
+        round() {
+            switch (this.id) {
+                case Enemy.WHEEL: // 滚轮
+                    if (Math.random() < 0.25) {
+                        this.battle.log("滚轮扬起的烟尘让你睁不开双眼！你的攻击力降低了！")
+                        this.game.attack -= 10
+                        this.battle.roundEnd(() => this.game.attack += 10)
+                    }
+                    break;
+                case Enemy.CRD: // CRD
+                    if (this.battle.rounds === 9) {
+                        
+                        this.battle.log("CRD：“什么？！你们居然还能挺得住，看来我要动用增援了！”")
+                        this.battle.log("第一个短矛向你袭来")
+                        this.game.waitBattle(8, this.battle)
+                        this.battle.log("第二个短矛向你袭来")
+                        this.game.waitBattle(8, this.battle)
+                        this.battle.log("你转过头来，继续对战CRD。")
+                        this.battle.wait(() => this.game.$interface.addClass("battling")) // 重新加上，否则手机版不正常
+                    }
+                    break;
+                case Enemy.SHORT_SPEAR: // 短矛
+                    if (this.battle.rounds === 6) {
+                        this.game.achieve(2)
+                    }
+                    break;
+                case Enemy.DEER_FALSE: // 鹿法师
+                case Enemy.DEER_TRUE:
+                    if (this.battle.rounds % 5 === 4) {
+                        this.battle.log("鹿法师使用了火魔法！ATT暂时提升5点")
+                        this.attack += 5
+                        this.battle.roundEnd(() => this.attack -= 5)
+                    }
+                    break;
+                case Enemy.MECHANIC_HORSE: // 机械木马
+                    if (this.health < 400) {
+                        this.battle.log('机械木马的HP降低了！')
+                        this.battle.log('机械木马使用了【自我修复】！机械木马的HP回升了70点！')
+                        if (this.fixed == false) {
+                            this.battle.log('“呃……这样真的能击败它吗？”水晶说道。')
+                            this.battle.log('“Zero就不能用点什么手段吗……”一个骷髅抱怨道。')
+                            this.battle.log('“呃……对了！我看到这个木马的炮管，在平常的时候好像都是掩着的，说不定这就是它的弱点！Zero，它等下发动炮弹攻击的时候，你向炮管打去，看看会怎么样！”水晶说。')
+                            this.table.gunHealth.show()
+                            this.fixed = true
+                        }
+                        this.health += 70
+                    }
+                    if (this.battle.heavyAttack = this.battle.rounds % 5 === 4) {
+                        this.battle.log("机械木马正在准备一发重型火力攻击。")
+                        this.attack += 20
+                        this.battle.roundEnd(() => this.attack -= 20)
+                    } else if (this.battle.rounds % 5 === 0 && this.battle.rounds > 0) {
+                        this.battle.log("机械木马正在准备一发散弹攻击！")
+                        this.fightTimes = 2
+                    }
+                    break;
+                case Enemy.LORCE: // LORCE
+                    if (this.battle.rounds % 4 == 1 && !this.withXk) {
+                        this.withXk = true
+                        this.octahedron = true
+                        this.battle.log("星空恢复了过来。")
+                    }
+                    let ratio = 0.1
+                    if (this.battle.intenseFight == true) {
+                        ratio *= 2
+                    }
+                    if (this.battle.defense) {
+                        ratio *= 2
+                    }
+                    if (this.battle.breakHarm = Math.random() < ratio) {
+                        this.battle.log("罗尔斯举起了重剑！罗尔斯的攻击力提高了！")
+                        this.attack += 10
+                        this.battle.roundEnd(() => this.attack -= 10)
+                        this.breakHarm = true
+                    }
+                    if (Math.random() < ratio) {
+                        let poker = randInt(10, 35)
+                        this.game.health -= poker
+                        this.battle.log(`罗尔斯使用了一发扑克散弹,你受到了${poker}点伤害！`)
+                    }
+                    if (Math.random() < ratio) {
+                        this.battle.log("罗尔斯使用重剑劈晕了星空！")
+                        this.withXk = false
+                        this.octahedron = false
+                    }
+                    this.attack += 5
+                    this.battle.roundEnd(() => this.attack -= 5)
+                    break;
+                default:
+                    break
+            }
         }
     }
+    Enemy.WHEEL = 5
+    Enemy.CRD = 7
+    Enemy.SHORT_SPEAR = 8
+    Enemy.DEER_FALSE = 10
+    Enemy.DEER_TRUE = 11
+    Enemy.MECHANIC_HORSE = 13
+    Enemy.LORCE = 17
     class Game {
         constructor() {
             this.id = -1
             this.$interface = $(".ate-interface")
+            this.$grid = $("<div/>").addClass("ate-grid").appendTo(this.$interface)
+            this.$status = $("<div/>").addClass("ate-status").appendTo(this.$grid)
             this.settings = new Settings(this)
-            this.$settings = Game.button("设置").on("click", () => this.settings.open()).appendTo(this.$interface)
+            this.$settings = Game.button("设置").on("click", () => this.settings.open()).appendTo(this.$status)
 
             if (Element.prototype.requestFullscreen) {
                 let on = false
@@ -1279,7 +1403,7 @@
                     } else {
                         document.exitFullscreen()
                     }
-                }).appendTo(this.$interface)
+                }).appendTo(this.$status)
             }
 
             var $enter = $("<div/>").addClass("ate-enter").html("Extend Air Ticket<div>Click to start</div>").prependTo(this.$interface).one("click", () => {
@@ -1289,7 +1413,6 @@
             })
             var $white = $("<div/>").addClass("ate-white").prependTo(this.$interface)
             var $sw0rd = $("<div/>").addClass("ate-sw0rd").prependTo(this.$interface).hide().fadeIn(1000)
-
             
             var $author = $("#author")
             $author.on("click", () => {
@@ -1299,11 +1422,28 @@
                 $white.remove()
                 $sw0rd.fadeOut(1000)
             }, 4000)
-
             $(document).one("click", () => {
-                document.getElementById("music").play()
+                const AUDIO = document.getElementById("music")
+                if (AUDIO instanceof HTMLAudioElement) { // 只是为了迎合VSCode（（（
+                    $(document).on("visibilitychange", () => {
+                        if (document.visibilityState !== "visible") {
+                            if (!this.settings.get("playwhenhidden")) {
+                                AUDIO.pause()
+                            }
+                        } else {
+                            AUDIO.play()
+                        }
+                    })
+                    AUDIO.play()
+                } else {
+                    console.warn("未找到<audio>，无法播放。")
+                }
                 if (Element.prototype.requestFullscreen) {
                     document.documentElement.requestFullscreen({navigationUI: "hide"})
+                // @ts-ignore
+                } else if (Element.prototype.webkitRequestFullScreen) {
+                    // @ts-ignore
+                    document.documentElement.webkitRequestFullScreen({navigationUI: "hide"})
                 }
             })
             this.itemImages = []
@@ -1311,6 +1451,13 @@
                 this.itemImages.push("./images/" + each.id + ".png")
             }
 
+            window.addEventListener("beforeunload", (e) => {
+                if (!this.saved) {
+                    e.preventDefault()
+                    e.returnValue = "" // 现代浏览器不支持自定义挽留消息（来自MDN）
+                    return ""
+                }
+            })
             if (localStorage.gameData) {
                 this.storage = JSON.parse(localStorage.gameData)
                 
@@ -1322,7 +1469,7 @@
         }
         
         chooseChapter() {
-            var $chapters = $("<div/>").addClass("ate-chapters").appendTo(this.$interface)
+            var $chapters = $("<div/>").addClass("ate-chapters").appendTo(this.$status)
             for (let i = 1; i <= 5; i++) {
                 let $chapter = $("<div/>").addClass("ate-chapter").appendTo($chapters)
                 if (data[i] && i == this.chapter) { // 若数据中有该章节
@@ -1343,18 +1490,22 @@
         
         run() {
             
-            this.$save = Game.button("保存").on("click", () => this.save()).appendTo(this.$interface)
-            this.table = new Table("ate-vals", "状态栏").appendTo(this.$interface)
+            this.$save = Game.button("保存").on("click", () => this.save()).appendTo(this.$status)
+            this.$shopMagic = Game.button("商店").on("click", () => this.shopMagic()).appendTo(this.$status)
+            $(document).on("keypress", e => {e.which === 89 && this.shopMagic()}) // 你TM把我害惨了呜呜呜
+            // 加上花括号就不会了（
+            this.table = new Table("ate-vals", "状态栏").appendTo(this.$status)
             
-            this.$items = $("<div/>").addClass("ate-items").appendTo(this.$interface)
+            this.$items = $("<div/>").addClass("ate-items").appendTo(this.$status)
             
-            this.$equipments = $("<div/>").addClass("ate-equipments").appendTo(this.$interface)
+            this.$equipments = $("<div/>").addClass("ate-equipments").appendTo(this.$status)
             
-            this.$message = $("<div/>").addClass("ate-messages").appendTo(this.$interface)
+            this.$message = $("<div/>").addClass("ate-messages").appendTo(this.$grid)
             
-            this.$battle = $("<div/>").addClass("ate-battle").appendTo(this.$interface)
+            this.$battle = $("<div/>").addClass("ate-battle").appendTo(this.$grid)
             
-            this.$buttons = $("<div/>").addClass("ate-choices").appendTo(this.$interface)
+            this.$input = $("<div/>").addClass("ate-input").appendTo(this.$grid)
+            this.$buttons = $("<div/>").addClass("ate-choices").appendTo(this.$grid)
             
             this.$weapon = $("<div/>").addClass("ate-item").appendTo(this.$equipments)
             
@@ -1399,6 +1550,7 @@
                 	this.add(each, this.stackables[each]) // 无需parseInt, Game.items是number[]
                 }
                 this.cm = this.storage.cm
+                this.shops = this.storage.shops || []
                 this.virtualExperience = this.storage.virtual || []
             } else {
                 this.storage = {}
@@ -1409,6 +1561,8 @@
                 this.stackables = {}
                 
                 this.items = []
+                
+                this.shops = []
                 
                 this.virtualExperience = []
             }
@@ -1439,13 +1593,16 @@
         }
         
         showItems(nothrowable) {
-            var a = []
-            for (let each of this.items) {
+            var arr = [], indexes = []
+            var items = this.items
+            for (let index in items) {
+                let each = items[index]
                 if (each.throwable !== false || !nothrowable) {
-                    a.push(each.name)
+                    arr.push(each.name)
+                    indexes.push(parseInt(index))
                 }
             }
-            return a
+            return [arr, indexes]
         }
         
         equip(item) {
@@ -1590,16 +1747,12 @@
             }
         }
         
-        waitGet(id, amount, process) {
-            var amount = amount || 1
-            process = process || this
-            
-
+        waitGet(id, amount = 1, process = this) {
             
             const add = () => {
                 if (this.itemsFull(id)) { // 其实这里判重了，但是不影响
                     this.wait(() => {
-                        var items = this.showItems(true) // 必须等到当时实时获取物品数组
+                        var [items, indexes] = this.showItems(true) // 必须等到当时实时获取物品数组
                         items.push("放弃拾取")
                         this.Process(p => {
                             p.log("已满，请丢弃一项")
@@ -1607,7 +1760,7 @@
                                 if (i === this.max) { // 放弃拾取
                                     return p.die(this)
                                 }
-                                this.remove(i)
+                                this.remove(indexes[i])
                                 this.add(id, amount)
                                 p.die(process)
                             })
@@ -1669,8 +1822,7 @@
             return item
         }
         
-        waitRemove(index, process) {
-            process = process || this
+        waitRemove(index, process = this) {
             process.wait(() => void this.remove(index))
         }
         
@@ -1678,12 +1830,11 @@
             return this.remove(this.items.indexOf(item))
         }
         
-        waitRemoveItem(item, process) {
-            process = process || this
+        waitRemoveItem(item, process = this) {
             process.wait(() => void this.removeItem(item))
         }
         
-        use(index, battle) {
+        use(index, battle, itemSubProcess) {
             var item = this.items[index]
             if (item.stackable) {
                 item.amount -= 1
@@ -1691,9 +1842,12 @@
                 this.waitRemove(index, battle)
             }
             battle.log(`你使用了${item.name}。`)
+            if (item.id === FROZEN_BREAD) {
+                battle.frozenBreadUsed = true
+            }
             // @ts-ignore
             for (let each of item.use) {
-            	this.execute(each, battle)
+            	this.execute(each, battle, itemSubProcess)
             }
         }
         
@@ -1730,7 +1884,7 @@
                     
             }
             if ("battle" in story) {
-                this.battle(story.battle, this)
+                this.waitBattle(story.battle, this)
             }
             if ("choice" in story) {
                 if ("to" in story) { // 选择一类
@@ -1762,36 +1916,36 @@
                     }, story.fadeChoice)
                 } else { // 输入框一类，例如J12132的挂历谜题
                     this.wait(() => {
-                        let $input = $("<input/>")
-                            .attr("type", "text")
-                            .appendTo(this.$message)
-                            .on("keypress", e => {
-                                if (e.which === 13) {
-                                    
-                                    // @ts-ignore
-                                    const VAL = $input.val()
-                                    if (!("#default" in story.choice)) {
-                                        if (VAL in story.choice) {
-                                            const to = story.choice[VAL]
-                                            if (typeof to === "number") {
-                                                this.exp(to)
-                                            } else if (Array.isArray(to)) {
-                                                this.exp(this.judgeArr(to))
-                                            }
-                                        } else {
-                                            return
-                                        }
-                                    } else {
-                                        const to = story.choice[VAL in story.choice ? VAL : "#default"]
+                        this.toggleExpand()
+                        let input = new Input(
+                            this,
+                            [],
+                            str => "#pattern" in story.choice ? new RegExp(story.choice["#pattern"]).test(str) : true,
+                            str => {
+                                if (!("#default" in story.choice)) {
+                                    if (str in story.choice) {
+                                        const to = story.choice[str]
                                         if (typeof to === "number") {
                                             this.exp(to)
                                         } else if (Array.isArray(to)) {
                                             this.exp(this.judgeArr(to))
                                         }
+
+                                    } else {
+                                        return
                                     }
-                                    $input.remove()
+                                } else {
+                                    const to = story.choice[str in story.choice ? str : "#default"]
+                                    if (typeof to === "number") {
+                                        this.exp(to)
+                                    } else if (Array.isArray(to)) {
+                                        this.exp(this.judgeArr(to))
+                                    }
                                 }
-                            })
+                                input.remove()
+                                this.toggleExpand()
+                            }
+                        )
                     })
                 }
             } else {
@@ -1822,7 +1976,7 @@
             }
         }
         
-        execute(command, battle) {
+        execute(command, battle, itemSubProcess) {
             
             var tokens = command.split(" "), amount
             switch (tokens[0]) {
@@ -1876,7 +2030,20 @@
                     }
                 	break;
                 case "harm":
-                    battle.enemy.health -= parseInt(tokens[1])
+                    if (tokens[2] == "1" && battle.aliveEnemyAmount > 1) {
+                        this.Process(process => {
+                            process.log("选择一个使用对象。")
+                            for (let enemy of battle.enemy) {
+                                enemy.table.$outer.on("click", () => {
+                                    enemy.health -= parseInt(tokens[1])
+                                    $(".ate-enemy-table").off("click")
+                                    process.die(itemSubProcess)
+                                })
+                            }
+                        }).go()
+                    } else {
+                        battle.enemy.forEach(each => !each.dead && (each.health -= parseInt(tokens[1])))
+                    }
                     break;
                 case "dodge":
                     this.dodge(parseInt(tokens[1]), tokens[2])
@@ -1887,8 +2054,11 @@
                 case "floor":
                     this.floor()
                     break;
+                case "door":
+                    this.door(parseInt(tokens[1]), parseInt(tokens[2]))
+                    break;
                 case "shop":
-                    this.wait(() => this.shop(parseInt(tokens[1])))
+                    this.waitShop(parseInt(tokens[1]))
                     break;
                 case "achieve":
                     this.achieve(parseInt(tokens[1]))
@@ -1899,10 +2069,10 @@
                     amount = intOrScope(tokens[2])
                 	if (tokens[1] == "+") {
                 		battle.enemy[prop] += amount
-                        battle.roundEnd(() => {battle.enemy[prop] -= amount})
+                        battle.roundEnd(() => battle.enemy[prop] -= amount)
                 	} else if (tokens[1] == "-") {
                 		battle.enemy[prop] -= amount
-                        battle.roundEnd(() => {battle.enemy[prop] += amount})
+                        battle.roundEnd(() => battle.enemy[prop] += amount)
                 	}
                     break;
                 case "experience":
@@ -1912,6 +2082,9 @@
                     let round = battle.rounds + parseInt(tokens[1]) // 第一个令牌表示延迟的回合数
                     battle.deferredCommands[round] = battle.deferredCommands[round] ?? [] // 若无则创建一个
                     battle.deferredCommands[round].push(tokens.slice(2).join(" ")) // 剩余令牌作为指令传入
+                    break;
+                case "addshop":
+                    this.shops.push(parseInt(tokens[1]))
                     break;
                 case "sleep":
                     break;
@@ -2062,15 +2235,16 @@
                 virtual: this.virtualExperience,
                 chapter: this.chapter
             }
+            this.saved = false
         }
         
         save() {
-            
+            this.saved = true
         	localStorage.gameData = JSON.stringify(this.storage)
             this.notify("保存成功")
         }
         
-        battle(id, owner) {
+        waitBattle(id, owner) {
             owner.wait(() => {
                 var battle = new Battle(data.battle[id], this, owner)
                 battle.run()
@@ -2078,35 +2252,29 @@
         }
         
         dodge(baseEnemy, name) {
-            this.waitProcess(this, p => {
-                this.$interface.addClass("battling")
-                const dodge = () => {
-                    let str = $input.val()
-                    if (typeof str !== "string") {
-                        throw new Error("Str should be string")
+            this.waitProcess(this, process => {
+                this.toggleExpand()
+                var input = new Input(
+                    this,
+                    ["A", "B", "C", "D"],
+                    Battle.check5Capitals,
+                    str => {
+                        input.remove()
+                        let [hurt, letters, _harm] = Battle.computeHurtHarm(str, 0, baseEnemy, true, 0, 0, this)
+                        process.log(`你的攻击是${str}，${name}的攻击是${letters}。`)
+                        process.log(`你被扣血${hurt}`)
+                        this.health -= hurt
+                        process.wait(() => this.toggleExpand())
+                        process.waitDie(this)
                     }
-                    if (!Battle.check5Capitals(str)) {
-                        return;
-                    }
-                    $attack.remove()
-                    let [hurt, letters, _harm] = Battle.computeHurtHarm(str, 0, baseEnemy, true, 0, this)
-                    p.log(`你的攻击是${str}，${name}的攻击是${letters}。`)
-                    p.log(`你被扣血${hurt}`)
-                    this.health -= hurt
-                    p.wait(() => void this.$interface.removeClass("battling"))
-                    p.wait(() => p.die(this))
-                }
-                let $attack = $("<div/>").appendTo(this.$battle)
-                let $input = $("<input/>").attr("type", "text").appendTo($attack).on("keypress", e => {if (e.which === 13) dodge()})
+                )
                 if (this.settings.get("random")) { // 自动装填
                     let str = [] // 字符串中的字符ASCII码
                     for (let i = 0; i < 5; i++) {
                         str.push(randInt(65, 68)) 
                     }
-                    $input.val(String.fromCharCode(...str)) // 解构
+                    input.setValue(String.fromCharCode(...str)) // 解构
                 }
-                // @ts-ignore
-                let $button = Game.button("攻击！").appendTo($attack).on("click", () => dodge())
             })
         }
         bridge(floor = false) {
@@ -2122,7 +2290,8 @@
                 var formedBridges = Array.from(bridges)
                 if (ch === noBridge) {
                     formedBridges.splice(noBridge, 1)
-                    p.log(`翻转地板组成了${type + formedBridges.join()}，你没通过${type}！`)
+                    p.log(`翻转地板组成了${type + formedBridges.join()}，你没通过${type}！[HP-2]`)
+                    this.health -= 2
                     return rechoose()
                 } else {
                     p.log(`你通过了${type}！`)
@@ -2133,12 +2302,83 @@
             return this.bridge(true)
         }
         
-        shop(id) {
+        door(amount, least) {
+            this.waitProcess(this, process => {
+                this.toggleExpand()
+                var times = 0
+                const generate = () => {
+                    if (amount == 5 && least == 5 && times % 3 === 0) {
+                        return "00000"
+                    } else if (amount == 10 && least == 10 && times % 3 === 0) {
+                        return Math.random() > 0.5 ? "1111111111" : "0000000000"
+                    }
+                    let ret = ""
+                    for (let i = 0; i < amount; i++) {
+                        ret += Math.random() > 0.5 ? "1" : "0"
+                    }
+                    return ret
+                }
+                var input = new Input(
+                    this,
+                    ["0", "1"],
+                    str => str.length === amount && !/[^01]/.test(str),
+                    str => {
+                        let doors = generate()
+                        let passed = 0
+                        for (let i = 0; i < amount; i++) {
+                            if (doors[i] !== str[i]) {
+                                passed++
+                            }
+                        }
+                        if (passed >= least) {
+                            process.log("你通过了升降门！")
+                            process.waitDie(this)
+                            input.remove()
+                            this.toggleExpand()
+                        } else {
+                            process.log(`升降门的升降形式是${doors}，你只通过了${passed}道门，请重新来过[HP-5]`)
+                            input.setValue("")
+                            this.health -= 5
+                        }
+                        times++
+                    })
+                process.log(`请输入您的通过方式，由${amount}个二进制字符组成`)
+                if (amount != least) {
+                    process.log(`至少通过${least}/${amount}道`)
+                }
+            })
+        }
+        shopMagic() {
+            if (this.queue.owner !== 0) {
+                return this.notify("现在不能使用商店魔法");
+            }
+            var availableShopNames = []
+            if (this.shops.length <= 0) { // 我是啥b
+                this.log("你没有商店。")
+                return
+            }
+            for (let each of this.shops) {
+                let shop = data.shop[each]
+                console.log(data.shop, data.shop[each], shop)
+                availableShopNames.push(shop.name)
+                
+            }
+            this.Process(p => {
+                p.choose(availableShopNames, ch => {
+                    this.waitShop(this.shops[ch], p)
+                    p.waitDie(this)
+                })
+            }).go()
+        }
+        
+        waitShop(id, process = this) {
             var shopData = data.shop[id]
+            var shopPrices = shopData.price
+            process.log(`欢迎来到${"name" in shopData ? shopData["name"] : "商店"}！`)
             const shop = () => this.Process((p) => {
                 var prices = {}, items = [], itemIds = []
-                for (let item in shopData) {
-                    let price = shopData[item]
+                for (let item in shopPrices) {
+                    let price = shopPrices[item]
                     if (Array.isArray(price)) {
                         price = this.judgeArr(price)
                         if (!price) {
@@ -2149,6 +2389,7 @@
                     itemIds.push(item)
                     items.push(data.items[item].name + ` [cost CM币${price}个]`)
                 }
+                console.log(prices)
                 var leaveKey = items.length
                 items.push("离开")
                 p.choose(items, ( ch) => {
@@ -2156,6 +2397,7 @@
                         return p.die(this)
                     }
                     var bought = parseInt(itemIds[ch])
+                    console.log(bought)
                     if (this.itemsFull(bought)) {
                         p.log("背包空间不够，你离开了商店")
                         return p.waitDie(this)
@@ -2169,35 +2411,39 @@
                     p.wait(() => p.die(shop()))
                 })
             }).go()
-            this.wait(() => shop())
+            process.wait(() => shop())
         }
         
         virtually(id) {
             this.virtualExperience.push(id)
         }
         die() {
-            this.log("黑暗再次降临。")
-            if (this.has(LOVECA)) {
-                this.log("使用复活爱心吗?")
-                this.choose(["是", "否"], (ch) => {
-                    if (!ch) {
-                        this.findItem(LOVECA).amount--
-                        this.health = 100
-                        this.log("那么，你将再次驱散黑暗")
-                    } else {
-                        this.log("看来，黑暗将会再度笼罩你")
-                        this.log("You died.")
-                        delete localStorage.gameData
-                        delete this.queue
-                    }
-                })
-            } else {
-                this.log("但是，希望似乎保佑不了你")
-                this.log("看来，黑暗将会再度笼罩你")
-                this.log("You died.")
-                delete localStorage.gameData
-                delete this.queue
-            }
+            var process = this.queue.now() // 只能用这种方式，因为赋值是传不了额外参数的
+            this.Process((dieProcess) => {
+                dieProcess.log("黑暗再次降临。")
+                if (this.has(LOVECA)) {
+                    dieProcess.log("使用复活爱心吗?")
+                    dieProcess.choose(["是", "否"], (ch) => {
+                        if (!ch) {
+                            this.findItem(LOVECA).amount--
+                            this.health = 100
+                            dieProcess.log("那么，你将再次驱散黑暗")
+                            dieProcess.waitDie(process)
+                        } else {
+                            dieProcess.log("看来，黑暗将会再度笼罩你")
+                            dieProcess.log("You died.")
+                            delete localStorage.gameData
+                            delete this.queue
+                        }
+                    })
+                } else {
+                    dieProcess.log("希望似乎保佑不了你")
+                    dieProcess.log("看来，黑暗将会再度笼罩你")
+                    dieProcess.log("You died.")
+                    delete localStorage.gameData
+                    delete this.queue
+                }
+            }).go()
         }
         
         static clear() {
@@ -2256,6 +2502,13 @@
                 if (options.title) {
                     $button.attr("title", options.title)
                 }
+                if (options.margin) {
+                    $button.css("marginLeft", options.margin)
+                }
+                if (options.padding) {
+                    $button.css("paddingLeft", options.padding)
+                        .css("paddingRight", options.padding)
+                }
             }
             return $button
         }
@@ -2289,6 +2542,15 @@
             })
         }
         
+        toggleExpand() {
+            let hasClass = this.$interface.hasClass("ate-interface-expanded")
+            if (hasClass) {
+                this.$interface.removeClass("ate-interface-expanded")
+            } else {
+                this.$interface.addClass("ate-interface-expanded")
+            }
+        }
+        
         skip(eid) {
             if (this.queue.processing) {
                 throw new Error("Still processing")
@@ -2299,7 +2561,6 @@
 
     }
 
-
         if (new URL(location.href).searchParams.get("pw") != "3473473639574279") {
             return
         }
@@ -2309,8 +2570,6 @@
 
 
     	document.title = "游玩 Extend Air Ticket"
-    	$("#firstHeading").html(`--- Extend Air Ticket v ${version} ---`)
         $("#version").html(version)
-
-})(jQuery, ateData, "2.14.0.1847 Beta")
-
+// @ts-ignore
+})(jQuery, ateData, "2.14.0 Beta")
