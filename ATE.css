@@ -74,8 +74,13 @@ html, body {
 .ate-item-description {
     position: absolute;
 	bottom: 0;
+	right: 50%;
+}
+
+.ate-item:last-child .ate-item-description > div {
 	right: 0;
 }
+
 .ate-item-description > div {
 	position: absolute;
 	z-index: 114514;
@@ -402,23 +407,27 @@ html, body {
 }
 
 @media only screen and (orientation: landscape) and (max-height: 600px) {
+	.ate-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr 10em;
+		grid-template-rows: auto 5em 5em;
+		height: 100%
+	}
 	.ate-info {
 		display: inline-table;
 		vertical-align: middle;
 	}
-	.ate-messages, .ate-battle {
-		transition: 0.5s ease-in-out width;
+	.ate-status {
+		grid-column: 1 / 4;
+		grid-row: 1;
 	}
-	.ate-interface.battling .ate-messages, .ate-interface.battling .ate-battle {
-		width: calc(50% - 5em)
+	.ate-messages {
+		grid-column: 1 / 3;
+		grid-row: 2 / 3
 	}
-	/*
-	.ate-items {
-		position: absolute;
-		right: 0;
-		top: 0;
+	.ate-messages, .ate-battle, .ate-input {
+		transition: 0.5s ease-in-out grid-column;
 	}
-	*/
 	.ate-choice {
 		font-size: 100%;
 		float: none;
@@ -437,18 +446,28 @@ html, body {
 		background-color: #f8f9fa;
 		border-top-left-radius: 6px;
 		transition: 0.5s ease-in height;
-	}
-	.ate-messages {
-		width: calc(100% - 10em);
-		position: absolute;
-		bottom: 0;
+		grid-column: 3 / 4;
+		grid-row: 2 / 3
 	}
 	.ate-battle {
-		position: absolute;
-		right: 10em;
-		width: 0;
-		bottom: 0;
 		overflow-x: auto;
+		display: none;
+	}
+	.ate-input {
+		display: none
+	}
+	.ate-interface-expanded .ate-messages {
+		grid-column: 1 / 2;
+	}
+	.ate-interface-expanded .ate-battle {
+		grid-column: 2 / 3;
+		grid-row: 2;
+		display: block;
+	}
+	.ate-interface-expanded .ate-input {
+		grid-column: 2 / 3;
+		grid-row: 3;
+		display: block
 	}
 }
 
