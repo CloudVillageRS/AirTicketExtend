@@ -16,6 +16,12 @@ html, body {
 	position: relative;
 	height: 100%;
 	box-sizing: border-box;
+	display: grid;
+	grid-template-rows: auto 1fr;
+}
+
+.ate-buttons {
+	grid-row: 1;
 }
 
 .ate-messages {
