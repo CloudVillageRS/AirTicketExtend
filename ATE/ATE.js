@@ -6,12 +6,24 @@
 
 
 (function ($, /** @type {GameData} */data, version) {
+    const DISPOSABLE_KEY = 0
+    const BALLOON = 1
     const LOVECA = 2
+    const FRIENDLY_SPEAR = 3
+    const BLACK_SKIRT = 4
     const SW0RD = 24
     const FROZEN_BREAD = 34
     const H_3RD_ANN_CAKE = 44
     const BLOOD_STONE = 48
     const DESTROYER_LASER = 65
+
+    
+    const charColors = {
+        A: "red",
+        B: "green",
+        C: "brown",
+        D: "aqua"
+    }
     /**
      * 生成一个[start, end]间的随机整数
      * @param {number} start
@@ -34,7 +46,7 @@
     class Input {
         /**
          * 
-         * @param {Game} game 
+         * @param {ChapterGame} game 
          * @param {string[]} chars 
          * @param {(val: string) => boolean} checkFn 
          * @param {(val: string, input: Input) => void} processFn
@@ -52,7 +64,7 @@
                         processFn(VAL, this)
                     }
                 })
-            this.$shoot = Game.button("走你")
+            this.$shoot = RootGame.button("走你")
                 .appendTo(this.$element)
                 .on("click", () => {
                     const VAL = this.getValue()
@@ -61,13 +73,14 @@
                     }
                     processFn(VAL, this)
                 })
+            const asFightInput = checkFn === Battle.check5Capitals
             for (let each of chars) {
-                Game.button(each, {margin: "10px", padding: "16px"})
+                RootGame.button(each, {margin: "10px", padding: "16px", color: asFightInput ? charColors[each] : null}) // 应9Y的建议
                     .appendTo(this.$element)
                     .on("click", () => this.setValue(this.getValue() + each))
             }
             this.$element.append("<br>")
-                this.$clear = Game.button("清除", {cls: "negative"})
+                this.$clear = RootGame.button("清除", {cls: "negative"})
                     .appendTo(this.$element)
                     .on("click", () => this.setValue(""))
         }
@@ -218,7 +231,7 @@
     class Settings {
         /**
          * 
-         * @param {Game} game 
+         * @param {RootGame} game 
          */
         constructor(game) {
             this.game = game
@@ -334,9 +347,9 @@
                 this.$cover.hide()
             })
             // 播放过的消息
-            if (this.game.history) {
+            if (this.game.chapterGame && this.game.chapterGame.history) {
                 var $history = $(".ate-history").html("")
-                for (let each of this.game.history) {
+                for (let each of this.game.chapterGame.history) {
                     $("<li/>").html(each).appendTo($history)
                 }
             }
@@ -346,37 +359,37 @@
     }
     class Queue {
         /**
-         * 队列，只在游戏初始化时实例化
-         * @param {Game} game 
+         * 队列，只在游戏初始化前实例化
          */
-        constructor(game) {
+        constructor() {
             /**
-             * @type {JQuery.PlainObject<WaitFn[]>}
+             * 各个进程拥有的任务通道
+             * @type {Task[][]}
              */
-            this.arrays = {}
-            /** 转交以前该进程处理到的位置 */
-            this.cachedIndexes = {}
-            /** 是否正在处理任务 @type {boolean} */
+            this.taskTracks = []
+            /**
+             * 是否正在处理任务
+             * @type {boolean}
+             */
             this.processing = false
-            Queue.newid(game)
-            this.give(game)
+            /** @type {ProcessLike[]} */
+            this.stack = []
         }
         /**
-         * @param {WaitFn} fn 等待的回调函数。如果返回Promise，将在resolve时执行下个任务。若无返回值，直接执行下个任务。
-         * @param {P} cur 加入任务的进程。如果进程已经停运或者没有注册，不会推入。
+         * @param {Task} fn 等待的回调函数。如果返回Promise，将在resolve时执行下个任务。若无返回值，直接执行下个任务。
+         * @param {ProcessLike} process 加入任务的进程。如果进程已经停运或者没有注册，不会推入。
          */
-        push(fn, cur) {
-            if (cur.dead || !(this.arrays[cur.id])) {
+        push(fn, process) {
+            if (process.dead || !(this.stack.includes(process))) {
                 return
             }
-            this.arrays[cur.id].push(fn)
-            if (! this.processing) {
+            this.taskTracks[this.stack.indexOf(process)].push(fn)
+            if (!this.processing) {
                 this.process()
             }
         }
         /**
-         * 内部方法，用于启动队列。
-         * @private
+         * 用于启动队列。
          * @returns {void}
          */
         process() {
@@ -384,8 +397,8 @@
                 return;
             }
             var originalOwner = this.owner
-        	var queueArray = this.arrays[originalOwner]
-            var processingIndex = this.cachedIndexes[originalOwner] || 0
+            var originalOwnerIndex = this.ownerIndex
+        	var track = this.taskTracks[originalOwnerIndex]
             this.processing = true
         	const process = () => {
                 if (this.processing == false) {
@@ -393,18 +406,16 @@
                 }
                 if (originalOwner !== this.owner) {
                     this.processing = false
-                    this.cachedIndexes[originalOwner] = processingIndex
                     return this.process()
                 }
-        		if (processingIndex >= queueArray.length) {
-                    this.arrays[originalOwner] = []
-                    this.cachedIndexes[originalOwner] = 0
+        		if (track.length === 0) {
                     this.processing = false
                     return
                 }
-                console.log(queueArray[processingIndex], originalOwner)
-        		let result = queueArray[processingIndex++].call(undefined)
-        		if (result && result.done) {
+                let task = track.shift()
+                console.log(task, originalOwner)
+        		let result = task.call(undefined)
+        		if (result && result.done instanceof Function) {
         			result.done(process)
         		} else {
         			process()
@@ -415,110 +426,133 @@
         /**
          * 把队列控制权转交给某进程。队列会转而执行该进程派发的任务。
          * 如果该进程没有注册在队列实例中，会进行注册。
-         * @param {P} process 
+         * @param {ProcessLike} process 
          */
         give(process) {
-            /** @type {number} */
-            this.owner = process.id
             if (process.dead) {
                 return;
             }
-            if (!(this.arrays[process.id])) {
-                this.arrays[process.id] = []
-            }
+            /** @type {number} */
+            this.stack.push(process)
+            this.taskTracks.push([])
             if (!this.processing) {
                 this.process()
             }
         }
-        /**
-         * 将id加给进程，并把进程注册到静态属性。
-         * @param {P} obj 
-         */
-        static newid(obj) {
-            Queue.registeredOwners.push(obj)
-            obj.id = Queue.curid
-            Queue.curid++
+        // @ts-ignore
+        get owner() {
+            return this.stack[this.ownerIndex]
         }
-        /**
-         * 当前控制队列的进程。
-         * @returns {P}
-         */
-        now() {
-            return Queue.registeredOwners[this.owner]
+        // @ts-ignore
+        get ownerIndex() {
+            return this.stack.length - 1
         }
     }
     /**
-     * @type {P[]}
+     * @abstract
      */
-    Queue.registeredOwners = []
-    Queue.curid = 0
+    class ProcessLike {
+        /**
+         * 
+         * @param {Queue} queue 
+         * @param {ChapterGame} [cGame]
+         */
+        constructor(queue, cGame) {
+            this.queue = queue
+            this.chapterGame = (this instanceof ChapterGame) ? this : cGame
+            this.dead = false
+        }
+        /**
+         * 做出选择
+         * 在ATE2中不支持key，因为根本没有（
+         * @param {Array<string>} choices
+         * @param {(choice: number) => void} callback
+         * @param {number[]} [fade]
+         */
+        choose(choices, callback, fade) {
+        	this.wait(() => this.chapterGame._choose(choices, callback, fade))
+        }
+        
+        /**
+         * 将一个函数加入等待队列，或将等待若干毫秒的函数加入队列。
+         * @param {number|Task} fnOrWaitMs 
+         * @returns {this}
+         */
+        wait(fnOrWaitMs) {
+            if (typeof fnOrWaitMs === "function") {
+                this.queue.push(fnOrWaitMs, this)
+            } else {
+                this.queue.push(() => {
+                    var deferred = $.Deferred()
+                    setTimeout(() => deferred.resolve(), fnOrWaitMs)
+                    return deferred
+                }, this)
+            }
+            return this
+        }
+        /**
+         * 停止该进程，将队列所有权转交给后继者。
+         */
+        die() {
+            this.dead = true
+            this.queue.stack.pop()
+            this.queue.taskTracks.pop() // 草草草搞忘写这句了
+            // 使GC正确执行（
+            // 现在不那么写了（
+            this.queue.process()
+        }
+        /**
+         * 将停止的任务以自身签名加入队列。
+         * 队列将在本进程之前任务全部完毕后停运该进程。
+         */
+        waitDie() {
+            this.wait(() => this.die())
+        }
+        
+        /**
+         * 推入发送消息到等待队列。
+         * @param {string} msg
+         */
+        log(msg) {
+            this.wait(() => {
+                var $msg = $("<span/>").html(msg).css("display", "none")
+                var deferred = $.Deferred()
+                this.chapterGame.$message.scrollTop(this.chapterGame.$message[0].scrollHeight)
+                this.chapterGame.$message.append($msg).append("<br>")
+                if (this.chapterGame.root.settings.get("speed") === 0) { // 应9Y的建议（
+                    $msg.show()
+                    this.chapterGame.$message.one("click", () => deferred.resolve())
+                } else {
+                    $msg.fadeIn(this.chapterGame.root.settings.get("speed"), () => deferred.resolve())
+                }
+                this.chapterGame.history.push(msg)
+                return deferred
+            })
+        }
+    }
     // 不用public static field，兼容性不好（
-    class Process {
+    class Process extends ProcessLike {
         /**
          * 
          * @param {(process: Process)=>void} func 
-         * @param {Game} game 
+         * @param {ChapterGame} game 
          */
         constructor(func, game) {
-            if (!game) throw new Error("Missing param game")
-            this.id = -1
-            Queue.newid(this)
+            super(game.queue, game)
             this.func = func
-            this.dead = false
-            this.game = game
         }
         /**
          * 执行进程
          */
         go() {
-            this.game.queue.give(this)
+            this.chapterGame.queue.give(this)
             this.func(this)
-        }
-        /**
-         * 以该进程签名发出消息。
-         * @param {string} msg
-         */
-        log(msg) {
-            this.game.log(msg, this)
-        }
-        /**
-         * 以该进程签名向队列加入回调函数。
-         * @param {WaitFn} fn
-         */
-        wait(fn) {
-            this.game.queue.push(fn, this)
-        }
-        /**
-         * 以该进程签名进行选择。
-         * @param {any[]} choices
-         * @param {(choice: number) => void} callback
-         */
-        choose(choices, callback) {
-            this.wait(() => this.game._choose(choices, callback))
-        }
-        /**
-         * 停止该进程，将队列所有权转交给后继者。
-         * @param {CBP} after 要转交的后继者
-         */
-        die(after) {
-            this.dead = true
-            delete Queue.registeredOwners[this.id]
-            // 使GC正确执行（
-            if (after) this.game.queue.give(after)
-        }
-        /**
-         * 将停止的任务以自身签名加入队列。
-         * 队列将在本进程之前任务全部完毕后停运该进程。
-         * @param {CBP} after 转交后继者
-         */
-        waitDie(after) {
-            this.wait(() => this.die(after))
         }
     }
     class Item {
         /**
          * @param {number} id
-         * @param {Game} game
+         * @param {ChapterGame} game
          * @param {number} amount
          * @param {JQuery<HTMLElement>} $element
          */
@@ -599,13 +633,13 @@
             }
             if (this.type == Item.ARMOR && this.game.armor !== this
                 || this.type == Item.WEAPON && this.game.weapon !== this) {
-                var $button = Game.button("装备").appendTo($desDiv)
+                var $button = RootGame.button("装备").appendTo($desDiv)
                 $button.on("click", () => {
                     this.game.equip(this)
                 })
             }
             if (this.throwable != false) {
-                Game.button("丢弃").appendTo($desDiv).on("click", () => {
+                RootGame.button("丢弃").appendTo($desDiv).on("click", () => {
                     if (this.game.armor !== this && this.game.weapon !== this) {
                         this.game.removeItem(this)
                     }
@@ -617,19 +651,17 @@
     Item.BATTLE = 1
     Item.WEAPON = 2
     Item.ARMOR = 3
-    class Battle {
+    class Battle extends ProcessLike {
         /**
          * 
          * @param {BattleData} battleData 
-         * @param {Game} game 
-         * @param {P} after
+         * @param {ChapterGame} game 
+         * @param {ProcessLike} after
          */
         constructor(battleData, game, after) {
+            super(game.queue, game)
             console.log(this)
-            this.id = -1
-            Queue.newid(this)
             game.queue.give(this)
-            this.game = game
             /** 是否处于教程阶段 */
             this.tutorial = battleData.tutorial
             /** 是否有星空伴随 */
@@ -637,9 +669,9 @@
             /** 是否可使用几何八面体 */
             this.octahedron = battleData.octahedron
             /** 治疗魔法消耗的MP */
-            this.cureMagicCost = this.game.has(14) ? 50 : 30
+            this.cureMagicCost = this.chapterGame.has(14) ? 50 : 30
             /** 治疗魔法增加的HP */
-            this.cureMagicPlus = this.game.has(14) ? 80 : 40
+            this.cureMagicPlus = this.chapterGame.has(14) ? 80 : 40
             /** div class="ate-battle" */
             this.$element = game.$battle
             /** 决定战斗完成后队列转交给哪个进程 */
@@ -667,7 +699,7 @@
             
             this.zeroTable = new Table("ate-zero-table", "Zero").appendTo(this.$element)
             this.zeroTable.add("magic", "魔法值", 100, "purple")
-            this.game.toggleExpand()
+            this.chapterGame.toggleExpand()
             /** 魔法值 */
             this.magic = 0
             /** 当前回合数 - 1 */
@@ -683,53 +715,25 @@
                 return;
             }
             this.won = true
-            this.log("您获胜了！")
-            if (this.afterWin) {
-                for (let command of this.afterWin) {
-                    this.game.execute(command)
+            this.chapterGame.goProcess(p => {
+                p.log("您获胜了！")
+                if (this.afterWin) {
+                    for (let command of this.afterWin) {
+                        this.chapterGame.execute(command)
+                    }
                 }
-            }
-            
-            this.game.toggleExpand()
-            setTimeout(() => {
-                this.zeroTable.remove()
-            }, 2000)
-            
-            this.$element.children().fadeIn()
-            this.wait(() => {
-                this.game.queue.give(this.after)
-                this.dead = true
+                
+                this.chapterGame.toggleExpand()
+                setTimeout(() => {
+                    this.zeroTable.remove()
+                }, 2000)
+                
+                this.$element.children().fadeIn()
+                p.wait(() => {
+                    p.die();
+                    this.die();
+                })
             })
-        }
-        /**
-         * 以战斗签名发出消息。
-         * @param {string} msg
-         */
-        log(msg) {
-            this.game.log(msg, this)
-        }
-        /**
-         * 以战斗签名推入回调函数，或推入等待若干毫秒的回调函数。
-         * @param {number|WaitFn} fn
-         */
-        wait(fn) {
-            if (typeof fn === "function") {
-                this.game.queue.push(fn, this)
-            } else {
-                this.game.queue.push(() => {
-                    var deferred = $.Deferred()
-                    setTimeout(() => deferred.resolve(), fn)
-                    return deferred
-                }, this)
-            }
-        }
-        /**
-         * 将选择以战斗签名推入
-         * @param {string[]} choices 
-         * @param {(ch: number) => void} callback 
-         */
-        choose(choices, callback) {
-            this.wait(() => this.game._choose(choices, callback))
         }
         /**
          * 运行战斗
@@ -737,7 +741,7 @@
         run() {
             if (this.tutorial) {
             	/**
-                 * @type {((game?: Game)=>any)[]}
+                 * @type {((game?: ChapterGame)=>any)[]}
                  */
             	this.roundEndCallback = []
                 this.log("星空说：“让我描述详细一点吧，在魔法系统下，战斗就是我们的【魔法核心】相互接触的过程，每个人都有一个【魔法核心】，只不过大多数人都不会用罢了，我来教你怎么使用。")
@@ -765,16 +769,16 @@
             this.frozenBreadUsed = false
             /**
              * 回合结束后执行的回调函数
-             * @type {((game?: Game)=>any)[]}
+             * @type {((game?: ChapterGame)=>any)[]}
              */
             this.roundEndCallback = []
             if (this.deferredCommands[this.rounds]) {
                 for (let command of this.deferredCommands[this.rounds]) {
-                    this.game.execute(command, this)
+                    this.chapterGame.execute(command, this)
                 }
             }
-            if (this.game.armor && this.game.armor.id === 23) { // 混乱护盾
-                this.game.execute("health + [3,20]")
+            if (this.chapterGame.armor && this.chapterGame.armor.id === 23) { // 混乱护盾
+                this.chapterGame.execute("health + [3,20]")
             }
             for (let enemy of this.enemy) {
                 enemy.round()
@@ -782,14 +786,14 @@
                     let message = enemy.message
                     /** 消息可以是包含随机消息数组的条件表达式或随机消息数组 */
                     if (typeof message[0] !== "string") {
-                        message = this.game.judgeArr(message)
+                        message = this.chapterGame.judgeArr(message)
                     }
                     let r = Math.floor(Math.random() * (message.length + 1))
                     if (r < message.length) {
                         let messageArray = message[r].split(";")
                         for (let each of messageArray) {
                             if (each.startsWith("/")) {
-                                this.game.execute(each.slice(1), this)
+                                this.chapterGame.execute(each.slice(1), this)
                             } else {
                                 this.log(each)
                             }
@@ -831,15 +835,15 @@
                 case 0:
                     if (this.enemy[0].id === 6 && Math.random() < 0.5) {
                         this.log("四面体向你的背包里发射了一颗能量球，你受到了15点伤害！")
-                        this.game.health -= 15
+                        this.chapterGame.health -= 15
                     }
                     /**
                      * 可用于战斗的道具
                      * @type {number[]}
                      */
                     let battlables = []
-                    for (let index in this.game.items) {
-                        let item = this.game.items[index]
+                    for (let index in this.chapterGame.items) {
+                        let item = this.chapterGame.items[index]
                         if (item.battle) {
                             battlables.push(parseInt(index))
                         }
@@ -849,17 +853,17 @@
                         return this.prepareChoose()
                     }
                     this.log("选择一项物品。")
-                    this.game.waitProcess(this, (itemSubProcess) => {
+                    this.chapterGame.waitProcess(this, (itemSubProcess) => {
                         for (let index of battlables) {
                             // console.log(index, this.game.$items.eq(parseInt(index)))
-                            this.game.$items.children().eq(index).css("boxShadow", "2px 2px 4px 4px #66ccff").on("click", () => {
-                                if (this.enemy[0].id === 8 && this.game.items[index].id === H_3RD_ANN_CAKE) {
-                                    this.game.achieve(4) // “大材小用”成就
+                            this.chapterGame.$items.children().eq(index).css("boxShadow", "2px 2px 4px 4px #66ccff").on("click", () => {
+                                if (this.enemy[0].id === 8 && this.chapterGame.items[index].id === H_3RD_ANN_CAKE) {
+                                    this.chapterGame.achieve(4) // “大材小用”成就
                                     // 真的有人能拿着蛋糕打短矛吗？
                                 }
-                                this.game.use(index, this, itemSubProcess)
-                                this.game.$items.children().css("boxShadow", "").off("click")
-                                itemSubProcess.waitDie(this)
+                                this.chapterGame.use(index, this)
+                                this.chapterGame.$items.children().css("boxShadow", "").off("click")
+                                itemSubProcess.waitDie()
                             })
                         }
                     })
@@ -898,7 +902,7 @@
                     this.chaoAttacked = true
                     this.fightTimes = 2
                     this.enemy[0].attack += 5
-                    this.game.virtually(12133)
+                    this.chapterGame.virtually(12133)
                     this.roundEnd(() => {
                         this.enemy[0].attack -= 5
                     })
@@ -906,7 +910,7 @@
                     switch (Math.floor(Math.random() * 4)) {
                         case 0:
                             this.log("小丑使用了“红心治疗”！")
-                            this.game.waitChoose(this, ["进攻", "诅咒"], ch => {
+                            this.chapterGame.waitChoose(this, ["进攻", "诅咒"], ch => {
                                 if (ch == 0) {
                                     this.chaos += randInt(3,5)
                                     this.enemy[0].health += randInt(10,50)
@@ -918,12 +922,12 @@
                             break
                         case 1: // 草花？不是梅花吗（
                             this.log('小丑使用了“草花守护”！')
-                            this.game.waitChoose(this, ["进攻", "打散"], ch => {
+                            this.chapterGame.waitChoose(this, ["进攻", "打散"], ch => {
                                 if (ch == 0) {
                                     this.chaos += randInt(3,4)
-                                    let attack = this.game.attack
-                                    this.game.attack = 0
-                                    this.roundEnd(() => this.game.attack = attack)
+                                    let attack = this.chapterGame.attack
+                                    this.chapterGame.attack = 0
+                                    this.roundEnd(() => this.chapterGame.attack = attack)
                                 } else {
                                     this.log('你用力向草花打去')
                                     this.chaos += 2
@@ -932,21 +936,21 @@
                             break
                         case 2:
                             this.log('小丑使用了“方块箭矢”！')
-                            this.game.waitChoose(this, ["进攻", "格挡"], ch => {
+                            this.chapterGame.waitChoose(this, ["进攻", "格挡"], ch => {
                                 if (ch == 0) {
                                     this.chaos += 2
-                                    this.game.health -= randInt(5,35)
+                                    this.chapterGame.health -= randInt(5,35)
                                 } else {
                                     this.log('你尽可能地格挡箭矢的进攻')
                                     this.chaos += randInt(1,5)
-                                    this.game.attack -= 10
-                                    this.roundEnd(() => this.game.attack += 10)
+                                    this.chapterGame.attack -= 10
+                                    this.roundEnd(() => this.chapterGame.attack += 10)
                                 }
                             })
                             break
                         case 3:
                             this.log('小丑使用了“黑桃炸弹”！')
-                            this.game.waitChoose(this, ["进攻", "闪躲"], ch => {
+                            this.chapterGame.waitChoose(this, ["进攻", "闪躲"], ch => {
                                 if (ch == 0) {
                                     this.chaos += randInt(2,3)
                                     this.enemy[0].attack += 5
@@ -954,10 +958,10 @@
                                 } else {
                                     this.log('你拼命闪躲着炸弹，你的防御增加了！同时攻击减少了')
                                     this.chaos += randInt(3,5)
-                                    this.game.defence += 10
-                                    this.game.attack -= 10
-                                    this.roundEnd(() => this.game.defence -= 10)
-                                    this.roundEnd(() => this.game.attack += 10)
+                                    this.chapterGame.defence += 10
+                                    this.chapterGame.attack -= 10
+                                    this.roundEnd(() => this.chapterGame.defence -= 10)
+                                    this.roundEnd(() => this.chapterGame.attack += 10)
                                 }
                             })
                             break
@@ -979,7 +983,7 @@
             if (this.octahedron) { // 如果 几何八面体 enabled
                 magics.push(`几何八面体（${this.magic}）`)
             }
-            this.game.waitChoose(this, magics, (magicType, process, rechoose) => {
+            this.chapterGame.waitChoose(this, magics, (magicType, process, rechoose) => {
                 switch (magicType) {
                     case 0:
                         if (this.magic < this.cureMagicCost) {
@@ -988,7 +992,7 @@
                         }
                         process.log(`你选择了治疗魔法，HP恢复${this.cureMagicPlus}`)
                         this.magic -= this.cureMagicCost
-                        this.game.health += this.cureMagicPlus
+                        this.chapterGame.health += this.cureMagicPlus
                         break;
                     case 1:
                         if (this.magic < 70) {
@@ -998,7 +1002,7 @@
                         process.log(`你选择了战斗魔法，Att提高5，持续一回合。`)
                         this.battleMagic = true
                         this.magic -= 70
-                        this.game.attack += 5
+                        this.chapterGame.attack += 5
                         break;
                     case 2:
                         if (this.black) {
@@ -1016,7 +1020,7 @@
                         break;
                     case 3:
                         if (this.enemy[0].id === 9) {
-                            this.game.virtually(200)
+                            this.chapterGame.virtually(200)
                         }
                         let currentMagic = this.magic
                         this.magic = 0
@@ -1042,7 +1046,7 @@
             if (this.octahedron) {
                 magics.push(`几何八面体（${this.magic}）`)
             }
-            this.game.waitChoose(this, magics, (magicType, process, rechoose) => {
+            this.chapterGame.waitChoose(this, magics, (magicType, process, rechoose) => {
                 switch (magicType) {
                     case 0:
                         if (this.magic < 60) {
@@ -1050,8 +1054,8 @@
                             return rechoose()
                         }
                         process.log("你试着用尽全力使出治疗法术……你的血量和攻击力增加了！")
-                        this.game.health += 80
-                        this.game.attack += 5
+                        this.chapterGame.health += 80
+                        this.chapterGame.attack += 5
                         this.battleMagic = true
                         this.magic -= 60
                         break;
@@ -1091,11 +1095,11 @@
                 return this.fightInput(enemyIndex + 1) // 直到找到没死的敌人
             }
             this.wait( () => {
-                var input = new Input(this.game, ["A", "B", "C", "D"], Battle.check5Capitals, (str) => {
+                var input = new Input(this.chapterGame, ["A", "B", "C", "D"], Battle.check5Capitals, (str) => {
                     input.remove()
                     this.fight(str, enemyIndex)
                 })
-                if (this.game.settings.get("random")) {
+                if (this.chapterGame.root.settings.get("random")) {
                     let str = []
                     for (let i = 0; i < 5; i++) {
                         str.push(65 + Math.floor(Math.random() * 4)) 
@@ -1129,7 +1133,7 @@
          * @param {boolean} defense 己方是否防御
          * @param {number} defence 己方防御值
          * @param {number} enemyDefence 敌方防御值
-         * @param {Game} game 游戏对象（用于索引界面元素）
+         * @param {ChapterGame} game 游戏对象（用于索引界面元素）
          * @param {number} [breakRate] 破甲率
          * @param {Battle} [self] 若为dodge则不适用
          * @returns {[number, string, number]} 敌方伤害，敌方攻击方式，我方伤害
@@ -1145,6 +1149,7 @@
                 }
             }
             let hurt = 0, harm = 0, letters = ""
+            const $interface = game.root.$interface
             for (let i = 0; i < 5; i++) {
                 let charThis = str.charCodeAt(i) - 65, charEnemy = same || Math.floor(Math.random() * 4), letter = String.fromCharCode(charEnemy + 65)
                 if (charThis == charEnemy - 1 || charThis == 3 && charEnemy == 0) {
@@ -1166,8 +1171,8 @@
                         attack = 0
                     }
                     harm += attack
-                    Battle.charWithColor(str.charAt(i), game.$interface, defense ? 0 : 1, false, i * 10 + 30 + "%")
-                    Battle.charWithColor(letter, game.$interface, -1, true, i * 10 + 30 + "%")
+                    Battle.charWithColor(str.charAt(i), $interface, defense ? 0 : 1, false, i * 10 + 30 + "%")
+                    Battle.charWithColor(letter, $interface, -1, true, i * 10 + 30 + "%")
                 } else if (charEnemy == charThis - 1 || charEnemy == 3 && charThis == 0) {
                     // 是否破甲
                     let broken = false;
@@ -1182,11 +1187,11 @@
                         hurt += baseEnemy - defence
                     }
                     console.log(i, broken, defense)
-                    Battle.charWithColor(str.charAt(i), game.$interface, defense ? 0 : 1, true, i * 10 + 30 + "%", defense && broken)
-                    Battle.charWithColor(letter, game.$interface, -1, false, i * 10 + 30 + "%")
+                    Battle.charWithColor(str.charAt(i), $interface, defense ? 0 : 1, true, i * 10 + 30 + "%", defense && broken)
+                    Battle.charWithColor(letter, $interface, -1, false, i * 10 + 30 + "%")
                 } else {
-                    Battle.charWithColor(str.charAt(i), game.$interface, defense ? 0 : 1, true, i * 10 + 30 + "%")
-                    Battle.charWithColor(letter, game.$interface, -1, true, i * 10 + 30 + "%")
+                    Battle.charWithColor(str.charAt(i), $interface, defense ? 0 : 1, true, i * 10 + 30 + "%")
+                    Battle.charWithColor(letter, $interface, -1, true, i * 10 + 30 + "%")
                 }
                 letters += letter
             }
@@ -1203,19 +1208,14 @@
          * @returns {JQuery<HTMLSpanElement>}
          */
         static charWithColor(char, $e, animation, fail, left, broken) {
-            var colors = {
-                A: "red",
-                B: "green",
-                C: "brown",
-                D: "aqua"
-            }
-            var $span = $("<span/>").html(char).css("color", colors[char]).appendTo($e)
+            var $span = $("<span/>").html(char).css("color", charColors[char]).appendTo($e)
             $span.css({
                 fontSize: "3em",
                 position: "fixed",
                 display: "block",
                 left: left,
-                fontWeight: "bold"
+                fontWeight: "bold",
+                userSelect: "none"
             })
             let type;
             if (animation === 1) {
@@ -1233,7 +1233,7 @@
                 type += "success"
             }
             $span.css("animation", `ate-char-${type} 4s linear`)
-            $span.css("--char-color", colors[char])
+            $span.css("--char-color", charColors[char])
             window.setTimeout(() => $span.remove(), 3800)
             return $span
         }
@@ -1249,12 +1249,12 @@
                     this.log("星空：太棒了，现在我们有足够的魔法值来使用魔法了，试一下【魔法】吧，它会给你带来增益效果！剩下的你就自己摸索吧")
                 } else {
                     this.log("星空：呃……你没有听我的，看来你是想自己对战了，那我就不打扰你了！我先给你个治疗法术吧！")
-                    this.game.execute("health + 240")
+                    this.chapterGame.execute("health + 240")
                 }
                 this.tutorial = false // 退出教程
             } else if (typeof str === "string") {
                 let enemyDefense = Math.random() < enemy.defenseRate
-                let weapon = this.game.weapon
+                let weapon = this.chapterGame.weapon
                 // 敌方防御且“我方武器为毁灭激光枪且魔法值足够”为假，则敌方防御有效，否则为0
                 let enemyDefence = enemyDefense ? enemy.defence : 0
                 const BREAK_RATES = {
@@ -1264,16 +1264,16 @@
                 // 解构
                 let [hurt, letters, harm] = Battle.computeHurtHarm(
                     str, // 攻击方式
-                    this.game.attack, // 己方单伤害
+                    this.chapterGame.attack, // 己方单伤害
                     enemy.attack, // 敌方原始伤害
                     this.defense, // 是否防御
                     enemyDefence,
-                    this.game.defence, // 己方防御值
-                    this.game,
+                    this.chapterGame.defence, // 己方防御值
+                    this.chapterGame,
                     BREAK_RATES[enemy.id] || 0, // 破甲率
                     this
                     )
-                if (this.frozenBreadUsed || this.game.dodgeRate && Math.random() <= this.game.dodgeRate) {
+                if (this.frozenBreadUsed || this.chapterGame.dodgeRate && Math.random() <= this.chapterGame.dodgeRate) {
                     hurt = 0 // 闪避/冰冻面包直接0伤
                 }
                 this.log(`你的攻击是${str}，对方的攻击是${letters}`)
@@ -1281,7 +1281,7 @@
                     this.log(`${enemy.name}选择了防御。`)
                 }
                 this.log(`你受到${hurt}点伤害`)
-                this.game.health -= hurt
+                this.chapterGame.health -= hurt
                 this.log(`你造成了${harm}点伤害`)
                 enemy.health -= harm
                 if (this.withXk) {
@@ -1301,11 +1301,11 @@
                     enemy.gunHealth--
                 }
                 if (this.battleMagic) {
-                    this.game.attack -= 5
+                    this.chapterGame.attack -= 5
                 }
             }
             for (let each of this.roundEndCallback) {
-                each.call(this.game)
+                each.call(this.chapterGame)
             }
             if (!this.won) {
                 this.rounds++
@@ -1335,7 +1335,7 @@
             this.enemyTable.chaos.set(val)
             if (this.chaos >= 100) {
                 this.log('混沌盘旋着毁灭了战场，你胜利了。')
-                this.game.virtually(12132)
+                this.chapterGame.virtually(12132)
                 this.win()
             }
         }
@@ -1361,7 +1361,7 @@
         }
         // @ts-ignore
         get black() {
-            return this.game.judge(1024) && this.enemy[0].id === 9
+            return this.chapterGame.judge(1024) && this.enemy[0].id === 9
         }
     }
     class Enemy {
@@ -1373,7 +1373,7 @@
             /** 敌人编号 */
             this.id = enemyData.id
             this.battle = battle
-            this.game = battle.game
+            this.game = battle.chapterGame
             this.table = new Table("ate-enemy-table", enemyData.name).appendTo(this.battle.$element)
             this.table.add("health", "HP", enemyData.health, "red")
             /** 敌人名称 */
@@ -1487,7 +1487,7 @@
                         this.battle.log("第二个短矛向你袭来")
                         this.game.waitBattle(8, this.battle)
                         this.battle.log("你转过头来，继续对战CRD。")
-                        this.battle.wait(() => this.game.$interface.addClass("battling")) // 重新加上，否则手机版不正常
+                        this.battle.wait(() => void this.game.toggleExpand()) // 重新加上，否则手机版不正常
                     }
                     break;
                 case Enemy.SHORT_SPEAR: // 短矛
@@ -1569,124 +1569,32 @@
     Enemy.DEER_TRUE = 11
     Enemy.MECHANIC_HORSE = 13
     Enemy.LORCE = 17
-    class Game {
-        constructor() {
-            this.id = -1
-            this.$interface = $(".ate-interface")
-            this.$grid = $("<div/>").addClass("ate-grid").appendTo(this.$interface)
-            this.$status = $("<div/>").addClass("ate-status").appendTo(this.$grid)
-            this.settings = new Settings(this)
-            this.$settings = Game.button("设置").on("click", () => this.settings.open()).appendTo(this.$status)
-/* #noapp */
-            if (Element.prototype.requestFullscreen) {
-                let on = false
-                // 使用监听全屏的方式，而不是在点击是切换状态变量on。
-                // 这样，如果用户按 ESC 退出也照样能够更新文字。
-                $(document).on("fullscreenchange", () => {
-                    on = !on
-                    this.$fullscreen.html(on ? "退出全屏" : "全屏模式")
-                })
-                this.$fullscreen = Game.button("退出全屏").on("click", () => {
-                    if (!on) {
-                        document.documentElement.requestFullscreen({navigationUI: "hide"})
-                    } else {
-                        document.exitFullscreen()
-                    }
-                }).appendTo(this.$status)
-            }
-/* #endnoapp */
-            var $enter = $("<div/>").addClass("ate-enter").html("Extend Air Ticket<div>Click to start</div>").prependTo(this.$interface).one("click", () => {
-                $enter.fadeOut(1000, () => {
-                    $enter.remove()
-                })
-            })
-            var $white = $("<div/>").addClass("ate-white").prependTo(this.$interface)
-            var $sw0rd = $("<div/>").addClass("ate-sw0rd").prependTo(this.$interface).hide().fadeIn(1000)
-            /**
-             * 右上角的Extend Air Ticket v2.x.x Code by Zes M Young
-             */
-            var $author = $("#author")
-            $author.on("click", () => {
-                $author.hide()
-            })
-            setTimeout(() => {
-                $white.remove()
-                $sw0rd.fadeOut(1000)
-            }, 4000)
-            $(document).one("click", () => {
-                const AUDIO = document.getElementById("music")
-                if (AUDIO instanceof HTMLAudioElement) { // 只是为了迎合VSCode（（（
-                    $(document).on("visibilitychange", () => {
-                        if (document.visibilityState !== "visible") {
-                            if (!this.settings.get("playwhenhidden")) {
-                                AUDIO.pause()
-                            }
-                        } else {
-                            AUDIO.play()
-                        }
-                    })
-                    AUDIO.play()
-                } else {
-                    console.warn("未找到<audio>，无法播放。")
-                }
-                if (Element.prototype.requestFullscreen) {
-                    document.documentElement.requestFullscreen({navigationUI: "hide"})
-                // @ts-ignore
-                } else if (Element.prototype.webkitRequestFullScreen) {
-                    // @ts-ignore
-                    document.documentElement.webkitRequestFullScreen({navigationUI: "hide"})
-                }
-            })
-            this.itemImages = []
-            for (let each of data.items) {
-                this.itemImages.push("./images/" + each.id + ".png")
-            }
-
-            window.addEventListener("beforeunload", (e) => {
-                if (!this.saved) {
-                    e.preventDefault()
-                    e.returnValue = "" // 现代浏览器不支持自定义挽留消息（来自MDN）
-                    return ""
-                }
-            })
-            if (localStorage.gameData) {
-                this.storage = JSON.parse(localStorage.gameData)
-                /** @type {1|2|3|4|5} */
-                this.chapter = this.storage.chapter || 1
-            } else {
-                this.chapter = 1
-            }
-            this.chooseChapter()
-        }
+    class ChapterGame extends ProcessLike {
+        
         /**
-         * 选取章节
-         */
-        chooseChapter() {
-            var $chapters = $("<div/>").addClass("ate-chapters").appendTo(this.$status)
-            for (let/** @type {1|2|3|4|5} */ i = 1; i <= 5; i++) {
-                let $chapter = $("<div/>").addClass("ate-chapter").appendTo($chapters)
-                if (data[i] && i == this.chapter) { // 若数据中有该章节
-                    $chapter.html("Chapter " + i).on("click", () => {
-                        /** @type {1|2|3|4|5} */
-                        $chapters.fadeOut(() => {
-                            $chapters.remove()
-                            this.run()
-                        })
-                    })
-                } else if (data[i] && i < this.chapter) {
-                    $chapter.addClass("ate-chapter-passed").html("passed")
-                } else { // 若尚无该章节
-                    $chapter.addClass("ate-chapter-locked").html("locked")
-                }
-            }
-        }
-        /**
+         * @param {Queue} queue
+         * @param {RootGame} root
+         * @param {1|2|3|4|5} chapter
          * 运行游戏
          */
-        run() {
+        constructor(queue, root, chapter) {
+            super(queue)
+            queue.give(this)
+            this.root = root
+            this.chapter = chapter
+            
+            this.$grid = $("<div/>")
+                .addClass("ate-grid")
+                .appendTo(this.root.$interface)
+            this.$status = $("<div/>").addClass("ate-status").appendTo(this.$grid) // 草
             /** 保存按钮 */
-            this.$save = Game.button("保存").on("click", () => this.save()).appendTo(this.$status)
-            this.$shopMagic = Game.button("商店").on("click", () => this.shopMagic()).appendTo(this.$status)
+            this.$save = RootGame.button("保存")
+                .on("click", () => this.save())
+                .appendTo(this.root.$buttons)
+            this.$shopMagic = RootGame.button("商店")
+                .on("click", () => this.shopMagic())
+                .appendTo(this.root.$buttons)
+                .hide()
             $(document).on("keypress", e => {e.which === 89 && this.shopMagic()}) // 你TM把我害惨了呜呜呜
             // 加上花括号就不会了（
             this.table = new Table("ate-vals", "状态栏").appendTo(this.$status)
@@ -1698,9 +1606,9 @@
             this.$message = $("<div/>").addClass("ate-messages").appendTo(this.$grid)
             /** 战斗UI的区域 */
             this.$battle = $("<div/>").addClass("ate-battle").appendTo(this.$grid)
-            /** 选择按钮的区域 */
             this.$input = $("<div/>").addClass("ate-input").appendTo(this.$grid)
-            this.$buttons = $("<div/>").addClass("ate-choices").appendTo(this.$grid)
+            /** 选择按钮的区域 */
+            this.$choices = $("<div/>").addClass("ate-choices").appendTo(this.$grid)
             /** 武器 */
             this.$weapon = $("<div/>").addClass("ate-item").appendTo(this.$equipments)
             /** 防具 */
@@ -1717,7 +1625,6 @@
             for (let i = 0; i < this.max; i++) {
                 $("<div/>").addClass("ate-item").appendTo(this.$items)
             }
-            this.queue = new Queue(this)
             this.dead = false
         	this.attack = 15
             this.defence = 0
@@ -1778,19 +1685,13 @@
                  */
                 this.virtualExperience = []
             }
-            /** 
-             * 对于数据中所有stackable的物品，如果在存档的stackables中不存在，会自动用0补充
-             * 然而存的时候确实也有0。该语句仅用于旧版本数据的更新以及从Re:Air Ticket Extend迁移的数据。
-            for (let each of data.items) {
-                if (each.stackable && !(each.id in this.stackables)) {
-                    this.stackables[each.id] = 0
-                }
+            if (this.shops.length > 0) {
+                this.$shopMagic.show()
             }
-            */
             /** 彩蛋随机数，相当于ATE1的fun */
             this.R = Math.round(Math.random() * 100) + 1
             /**
-             * 所有用Game.prototype.log()播放过的消息
+             * 所有用ProcessLike.prototype.log()播放过的消息
              * @type {string[]}
              */
             this.history = []
@@ -1798,25 +1699,12 @@
             this.exp(this.experience.length ? this.experience.pop() : 0)
         }
         /**
-         * 推入发送消息到等待队列。
-         * @param {string} msg
-         * @param {P} process
+         * “析构”
          */
-        log(msg, process = this) {
-            process.wait(() => {
-                var $msg = $("<span/>").html(msg).css("display", "none")
-                var deferred = $.Deferred()
-                this.$message.scrollTop(this.$message[0].scrollHeight)
-                this.$message.append($msg).append("<br>")
-                if (this.settings.get("speed") === 0) { // 应9Y的建议（
-                    $msg.show()
-                    this.$message.one("click", () => deferred.resolve())
-                } else {
-                    $msg.fadeIn(this.settings.get("speed"), () => deferred.resolve())
-                }
-                this.history.push(msg)
-                return deferred
-            })
+        die() {
+            [this.$grid, this.$shopMagic, this.$save].forEach($e => $e.remove())
+            super.die()
+            delete this.chapterGame
         }
         /**
          * 返回由所有物品的名称组成的数组。
@@ -1902,7 +1790,7 @@
             if (val > data[this.chapter].maxHealth) {
                 val = data[this.chapter].maxHealth
             } else if (val <= 0) {
-                this.die()
+                this.deadInterface()
             }
             this._health = val
             this.table.health.set(val)
@@ -2002,7 +1890,7 @@
          * 以process的签名向队列加入添加某id物品的物品amount个（仅用于可堆叠）的任务
          * @param {number} id
          * @param {number} [amount]
-         * @param {P} [process]
+         * @param {ProcessLike} [process]
          */
         waitGet(id, amount = 1, process = this) {
             /**
@@ -2014,23 +1902,23 @@
                     this.wait(() => {
                         var [items, indexes] = this.showItems(true) // 必须等到当时实时获取物品数组
                         items.push("放弃拾取")
-                        this.Process(p => {
+                        this.goProcess(p => {
                             p.log("已满，请丢弃一项")
                             p.choose(items, (/** @type {number} */ i) => {
                                 if (i === this.max) { // 放弃拾取
-                                    return p.die(this)
+                                    return p.die()
                                 }
                                 this.remove(indexes[i])
                                 this.add(id, amount)
-                                p.die(process)
+                                p.die()
                             })
-                        }).go()
+                        })
                     })
                 } else {
                     var item = this.add(id, amount)
                     this.waitProcess(process, p => {
                         p.log(`已将${item.name}加入您的背包。`)
-                        p.waitDie(process)
+                        p.waitDie()
                     })
                 }
             }
@@ -2094,7 +1982,7 @@
         }
         /**
          * @param {number} index
-         * @param {P} process
+         * @param {ProcessLike} process
          */
         waitRemove(index, process = this) {
             process.wait(() => void this.remove(index))
@@ -2109,7 +1997,7 @@
         }
         /**
          * @param {Item} item
-         * @param {P} process
+         * @param {ProcessLike} process
          */
         waitRemoveItem(item, process = this) {
             process.wait(() => void this.removeItem(item))
@@ -2118,9 +2006,8 @@
          * 战斗中使用物品。
          * @param {number} index
          * @param {Battle} battle
-         * @param {Process} itemSubProcess
          */
-        use(index, battle, itemSubProcess) {
+        use(index, battle) {
             var item = this.items[index]
             if (item.stackable) {
                 item.amount -= 1
@@ -2133,7 +2020,7 @@
             }
             // @ts-ignore
             for (let each of item.use) {
-            	this.execute(each, battle, itemSubProcess)
+            	this.execute(each, battle)
             }
         }
         /**
@@ -2242,7 +2129,7 @@
                 }
             } else {
             	const to = story.to
-                if (!this.settings.get("pass")) {
+                if (!this.root.settings.get("pass")) {
                     this.wait(() => {
                         var deferred = $.Deferred()
                         this.$message.append($("<span/>").html("点按以继续").css("font-size", "50%"))
@@ -2257,11 +2144,12 @@
                 } else if (to === true) {
                     this.experience = []
                     this.chapter++
+                    this.root.chapter++
                     this.health = data[this.chapter].maxHealth
                     this.cache()
                     this.save()
-                    this.log("请重启游戏！")
-                    this.wait(() => location.reload())
+                    this.wait(() => this.root.chooseChapter())
+                    this.waitDie()
                 } else {
                     this.log("敬请期待！")
                 }
@@ -2271,9 +2159,8 @@
          * 执行指令
          * @param {string} command 
          * @param {Battle} [battle]
-         * @param {Process} [itemSubProcess]
          */
-        execute(command, battle, itemSubProcess) {
+        execute(command, battle) {
             /**
              * @type {Array<string>}
              */
@@ -2330,16 +2217,16 @@
                 	break;
                 case "harm":
                     if (tokens[2] == "1" && battle.aliveEnemyAmount > 1) {
-                        this.Process(process => {
+                        this.goProcess(process => {
                             process.log("选择一个使用对象。")
                             for (let enemy of battle.enemy) {
                                 enemy.table.$outer.on("click", () => {
                                     enemy.health -= parseInt(tokens[1])
                                     $(".ate-enemy-table").off("click")
-                                    process.die(itemSubProcess)
+                                    process.die()
                                 })
                             }
-                        }).go()
+                        })
                     } else {
                         battle.enemy.forEach(each => !each.dead && (each.health -= parseInt(tokens[1])))
                     }
@@ -2384,6 +2271,9 @@
                     break;
                 case "addshop":
                     this.shops.push(parseInt(tokens[1]))
+                    if (this.$shopMagic.css("display") === "none") {
+                        this.$shopMagic.show()
+                    }
                     break;
                 case "sleep":
                     break;
@@ -2470,7 +2360,7 @@
         judgeArr(arr) {
             var l = arr.length
             // 合法条件表达式的第1个位置应该是合法条件字符串
-            if (!Game.isValidCondition(arr[1])) {
+            if (!ChapterGame.isValidCondition(arr[1])) {
                 return arr[randInt(0, l - 1)]
             }
             var res;
@@ -2496,7 +2386,7 @@
          */
         _choose(choices, callback, fade) {
             $(".ate-choices > *").hide()
-            var $choices = $("<div/>").appendTo(this.$buttons)
+            var $choices = $("<div/>").appendTo(this.$choices)
             for (let index in choices) { // index 为字符串，别弄错了
                 let $btn = $("<div/>").addClass("ate-choice").html(choices[index]).appendTo($choices);
                 $btn.on("click", () => {
@@ -2508,33 +2398,7 @@
                     $btn.css("opacity", "0.05")
                 }
             }
-            $choices.append(Game.clear())
-        }
-        /**
-         * 做出选择
-         * 在ATE2中不支持key，因为根本没有（
-         * @param {Array<string>} choices
-         * @param {(choice: number) => void} callback
-         * @param {number[]} [fade]
-         */
-        choose(choices, callback, fade) {
-        	this.wait(() => this._choose(choices, callback, fade))
-        }
-        /**
-         * 将一个函数加入等待队列，或将等待若干毫秒的函数加入队列。
-         * @param {number|(()=>JQuery.Promise|void)} fnOrWaitMs 
-         * @returns {void}
-         */
-        wait(fnOrWaitMs) {
-            if (typeof fnOrWaitMs === "function") {
-                this.queue.push(fnOrWaitMs, this)
-            } else {
-                this.queue.push(() => {
-                    var deferred = $.Deferred()
-                    setTimeout(() => deferred.resolve(), fnOrWaitMs)
-                    return deferred
-                }, this)
-            }
+            $choices.append(RootGame.clear())
         }
         cache() {
             /**
@@ -2577,12 +2441,12 @@
         save() {
             this.saved = true
         	localStorage.gameData = JSON.stringify(this.storage)
-            this.notify("保存成功")
+            this.root.notify("保存成功")
         }
         /**
          * 以owner为后继者触发战斗
          * @param {number|string} id 
-         * @param {P} owner
+         * @param {ProcessLike} owner
          */
         waitBattle(id, owner) {
             owner.wait(() => {
@@ -2609,10 +2473,10 @@
                         process.log(`你被扣血${hurt}`)
                         this.health -= hurt
                         process.wait(() => this.toggleExpand())
-                        process.waitDie(this)
+                        process.waitDie()
                     }
                 )
-                if (this.settings.get("random")) { // 自动装填
+                if (this.root.settings.get("random")) { // 自动装填
                     let str = [] // 字符串中的字符ASCII码
                     for (let i = 0; i < 5; i++) {
                         str.push(randInt(65, 68)) 
@@ -2679,7 +2543,7 @@
                         }
                         if (passed >= least) {
                             process.log("你通过了升降门！")
-                            process.waitDie(this)
+                            process.waitDie()
                             input.remove()
                             this.toggleExpand()
                         } else {
@@ -2696,8 +2560,8 @@
             })
         }
         shopMagic() {
-            if (this.queue.owner !== 0) {
-                return this.notify("现在不能使用商店魔法");
+            if (this.queue.ownerIndex !== 1) {
+                return this.root.notify("现在不能使用商店魔法");
             }
             var availableShopNames = []
             if (this.shops.length <= 0) { // 我是啥b
@@ -2710,23 +2574,23 @@
                 availableShopNames.push(shop.name)
                 
             }
-            this.Process(p => {
+            this.goProcess(p => {
                 p.choose(availableShopNames, ch => {
                     this.waitShop(this.shops[ch], p)
-                    p.waitDie(this)
+                    p.waitDie()
                 })
-            }).go()
+            })
         }
         /**
          * 商店
          * @param {number} id
-         * @param {P} process
+         * @param {ProcessLike} process
          */
         waitShop(id, process = this) {
             var shopData = data.shop[id]
             var shopPrices = shopData.price
             process.log(`欢迎来到${"name" in shopData ? shopData["name"] : "商店"}！`)
-            const shop = () => this.Process((p) => {
+            const shop = () => this.goProcess((p) => {
                 var prices = {}, items = [], itemIds = []
                 for (let item in shopPrices) {
                     let price = shopPrices[item]
@@ -2745,13 +2609,13 @@
                 items.push("离开")
                 p.choose(items, (/** @type {number} */ ch) => {
                     if (ch === leaveKey) {
-                        return p.die(this)
+                        return p.die()
                     }
                     var bought = parseInt(itemIds[ch])
                     console.log(bought)
                     if (this.itemsFull(bought)) {
                         p.log("背包空间不够，你离开了商店")
-                        return p.waitDie(this)
+                        return p.waitDie()
                     }
                     if (prices[bought] > this.cm) {
                         p.log("你的CM币不够！")
@@ -2759,9 +2623,10 @@
                         this.cm -= prices[bought]
                         this.waitGet(bought, 1, p)
                     }
-                    p.wait(() => p.die(shop()))
+                    p.waitDie()
+                    shop()
                 })
-            }).go()
+            })
             process.wait(() => shop())
         }
         /**
@@ -2771,9 +2636,11 @@
         virtually(id) {
             this.virtualExperience.push(id)
         }
-        die() {
-            var process = this.queue.now() // 只能用这种方式，因为赋值是传不了额外参数的
-            this.Process((dieProcess) => {
+        /**
+         * 
+         */
+        deadInterface() {
+            this.goProcess((dieProcess) => {
                 dieProcess.log("黑暗再次降临。")
                 if (this.has(LOVECA)) {
                     dieProcess.log("使用复活爱心吗?")
@@ -2782,7 +2649,7 @@
                             this.findItem(LOVECA).amount--
                             this.health = 100
                             dieProcess.log("那么，你将再次驱散黑暗")
-                            dieProcess.waitDie(process)
+                            dieProcess.waitDie()
                         } else {
                             dieProcess.log("看来，黑暗将会再度笼罩你")
                             dieProcess.log("You died.")
@@ -2797,15 +2664,7 @@
                     delete localStorage.gameData
                     delete this.queue
                 }
-            }).go()
-        }
-        /**
-         * Simular to {{-}} in wikitext. Prevents float elements from being out of the parent.
-         * 与clear模板类似，防止浮动元素漏出容器。
-         * @returns 
-         */
-        static clear() {
-            return $("<div/>").css("clear", "both")
+            })
         }
         /**
          * 为.ate-item元素添加background-image。
@@ -2816,8 +2675,8 @@
             if (item instanceof Item) {
                 item = item.id
             }
-            if (item < this.itemImages.length) {
-                $ele.css("backgroundImage", `url(${this.itemImages[item]})`)
+            if (item < this.root.itemImages.length) {
+                $ele.css("backgroundImage", `url(${this.root.itemImages[item]})`)
             }
         }
         /**
@@ -2830,7 +2689,7 @@
             }
             var achievement = data.achievement[id]
             var $achivement = $("<div/>").addClass("ate-achievement")
-            this.$interface.append($achivement)
+            this.root.$interface.append($achivement)
             $("<div/>").addClass("ate-achievement-title").html("成就：" + achievement.name).appendTo($achivement)
             $("<span/>").addClass("ate-achievement-content").html(achievement.description).appendTo($achivement)
             $achivement.animate({opacity: 1.0, left: 0}, 2000)
@@ -2862,6 +2721,170 @@
             }
         }
         /**
+         * 返回一个进程，game参数自动传入
+         * @param {(process:Process)=>void} func 
+         * @returns {void}
+         */
+        goProcess(func) {
+            return new Process(func, this).go()
+        }
+        /**
+         * 
+         * @param {ProcessLike} process 
+         * @param {(process:Process)=>void} func 
+         */
+        waitProcess(process, func) {
+            process.wait(() => this.goProcess(func))
+        }
+        /**
+         * @typedef {(arg0: number, process?: Process, rechoose?: () => boolean) => (void|boolean)} WaitChooseFn
+         * @param {ProcessLike} process
+         * @param {string[]} choices
+         * @param {WaitChooseFn} func
+         */
+        waitChoose(process, choices, func) {
+            this.waitProcess(process, (p) => {
+                const choosing = () => {
+                    p.choose(choices, ch => {
+                        let ret = func(ch, p, choosing)
+                        if (ret !== true) {
+                            p.die()
+                        }
+                    })
+                    return true;
+                }
+                choosing()
+            })
+        }
+        /**
+         * @returns {void}
+         */
+        toggleExpand() {
+            let hasClass = this.root.$interface.hasClass("ate-interface-expanded")
+            if (hasClass) {
+                this.root.$interface.removeClass("ate-interface-expanded")
+            } else {
+                this.root.$interface.addClass("ate-interface-expanded")
+            }
+        }
+        /**
+         * #nolts
+         * @param {number} eid
+         */
+        skip(eid) {
+            if (this.queue.processing) {
+                throw new Error("Still processing")
+            }
+            this.$choices.html("")
+            this.exp(eid)
+        }
+/** #endnolts */
+    }
+    class RootGame extends ProcessLike {
+        /**
+         * 
+         * @param {Queue} queue 
+         */
+        constructor(queue) {
+            super(queue)
+            this.queue = queue
+            queue.give(this)
+            this.$interface = $(".ate-interface")
+            this.$buttons = $("<div/>")
+                .addClass("ate-buttons")
+                .appendTo(this.$interface)
+            this.settings = new Settings(this)
+            this.$settings = RootGame.button("设置").on("click", () => this.settings.open()).appendTo(this.$buttons)
+/* #noapp */
+            if (Element.prototype.requestFullscreen) {
+                let on = false
+                // 使用监听全屏的方式，而不是在点击是切换状态变量on。
+                // 这样，如果用户按 ESC 退出也照样能够更新文字。
+                $(document).on("fullscreenchange", () => {
+                    on = !on
+                    this.$fullscreen.html(on ? "退出全屏" : "全屏模式")
+                })
+                this.$fullscreen = RootGame.button("退出全屏").on("click", () => {
+                    if (!on) {
+                        document.documentElement.requestFullscreen({navigationUI: "hide"})
+                    } else {
+                        document.exitFullscreen()
+                    }
+                }).appendTo(this.$buttons)
+            }
+/* #endnoapp */
+            var $white = $("<div/>").addClass("ate-white").insertAfter(this.$interface)
+            var $sw0rd = $("<div/>").addClass("ate-sw0rd").insertAfter(this.$interface).hide().fadeIn(1000)
+            this.wait(4000)
+                .wait(() => {
+                    $white.remove()
+                    $sw0rd.fadeOut(1000)
+                })
+            var enterInterfaceDeferred = $.Deferred()
+            var $enter = $("<div/>")
+                .addClass("ate-enter")
+                .html("Extend Air Ticket<div>Click to start</div>")
+                .insertAfter(this.$interface)
+                .one("click", () => {
+                    enterInterfaceDeferred.resolve()
+                })
+            this.wait(() => enterInterfaceDeferred)
+                .wait(() => $enter.fadeOut(1000))
+                .wait(1000)
+                .wait(() => $enter.remove())
+            /**
+             * 右上角的Extend Air Ticket v2.x.x Code by Zes M Young
+             */
+            var $author = $("#author")
+            $author.on("click", () => {
+                $author.hide()
+            })
+            $(document).one("click", () => {
+                const AUDIO = document.getElementById("music")
+                if (AUDIO instanceof HTMLAudioElement) { // 只是为了迎合VSCode（（（
+                    $(document).on("visibilitychange", () => {
+                        if (document.visibilityState !== "visible") {
+                            if (!this.settings.get("playwhenhidden")) {
+                                AUDIO.pause()
+                            }
+                        } else {
+                            AUDIO.play()
+                        }
+                    })
+                    AUDIO.play()
+                } else {
+                    console.warn("未找到<audio>，无法播放。")
+                }
+                if (Element.prototype.requestFullscreen) {
+                    document.documentElement.requestFullscreen({navigationUI: "hide"})
+                // @ts-ignore
+                } else if (Element.prototype.webkitRequestFullScreen) {
+                    // @ts-ignore
+                    document.documentElement.webkitRequestFullScreen({navigationUI: "hide"})
+                }
+            })
+            this.itemImages = []
+            for (let each of data.items) {
+                this.itemImages.push("./images/" + each.id + ".png")
+            }
+
+            window.addEventListener("beforeunload", (e) => {
+                if (!this.chapterGame.saved) {
+                    e.preventDefault()
+                    e.returnValue = "" // 现代浏览器不支持自定义挽留消息（来自MDN）
+                    return ""
+                }
+            })
+            if (localStorage.gameData) {
+                this.storage = JSON.parse(localStorage.gameData)
+                /** @type {1|2|3|4|5} */
+                this.chapter = this.storage.chapter || 1
+            } else {
+                this.chapter = 1
+            }
+            this.chooseChapter()
+        }
+        /**
          * 以cls为类，返回一个EATUI的按钮。
          * @param {string} text
          * @param {{
@@ -2869,6 +2892,7 @@
          *   title?: string;
          *   margin?: string;
          *   padding?: string;
+         *   color?: string;
          * }} [options]
          * @returns {JQuery}
          */
@@ -2888,8 +2912,34 @@
                     $button.css("paddingLeft", options.padding)
                         .css("paddingRight", options.padding)
                 }
+                if (options.color) {
+                    $button.css("backgroundColor", options.color)
+                }
             }
             return $button
+        }
+        
+        /**
+         * 选取章节
+         */
+        chooseChapter() {
+            var $chapters = $("<div/>").addClass("ate-chapters").appendTo(this.$interface)
+            for (let/** @type {1|2|3|4|5} */ i = 1; i <= 5; i++) {
+                let $chapter = $("<div/>").addClass("ate-chapter").appendTo($chapters)
+                if (data[i] && i == this.chapter) { // 若数据中有该章节
+                    $chapter.html("Chapter " + i).on("click", () => {
+                        /** @type {1|2|3|4|5} */
+                        $chapters.fadeOut(() => {
+                            $chapters.remove()
+                            this.chapterGame = new ChapterGame(this.queue, this, this.chapter)
+                        })
+                    })
+                } else if (data[i] && i < this.chapter) {
+                    $chapter.addClass("ate-chapter-passed").html("passed")
+                } else { // 若尚无该章节
+                    $chapter.addClass("ate-chapter-locked").html("locked")
+                }
+            }
         }
         /**
          * 发送一条绿色的消息，不展示在消息框中
@@ -2901,77 +2951,28 @@
             $msg.fadeOut(3000, () => $msg.remove())
         }
         /**
-         * 返回一个进程，game参数自动传入
-         * @param {(process:Process)=>void} func 
-         * @returns {Process}
+         * Simular to {{-}} in wikitext. Prevents float elements from being out of the parent.
+         * 与clear模板类似，防止浮动元素漏出容器。
+         * @returns 
          */
-        Process(func) {
-            return new Process(func, this)
+        static clear() {
+            return $("<div/>").css("clear", "both")
         }
-        /**
-         * 
-         * @param {P} process 
-         * @param {(process:Process)=>void} func 
-         */
-        waitProcess(process, func) {
-            process.wait(() => this.Process(func).go())
-        }
-        /**
-         * @typedef {(arg0: number, process?: Process, rechoose?: () => boolean) => (void|boolean)} WaitChooseFn
-         * @param {P} process
-         * @param {string[]} choices
-         * @param {WaitChooseFn} func
-         */
-        waitChoose(process, choices, func) {
-            this.waitProcess(process, (p) => {
-                const choosing = () => {
-                    p.choose(choices, ch => {
-                        let ret = func(ch, p, choosing)
-                        if (ret !== true) {
-                            p.die(process)
-                        }
-                    })
-                    return true;
-                }
-                choosing()
-            })
-        }
-        /**
-         * @returns {void}
-         */
-        toggleExpand() {
-            let hasClass = this.$interface.hasClass("ate-interface-expanded")
-            if (hasClass) {
-                this.$interface.removeClass("ate-interface-expanded")
-            } else {
-                this.$interface.addClass("ate-interface-expanded")
-            }
-        }
-        /**
-         * #nolts
-         * @param {number} eid
-         */
-        skip(eid) {
-            if (this.queue.processing) {
-                throw new Error("Still processing")
-            }
-            this.$buttons.html("")
-            this.exp(eid)
-        }
-/** #endnolts */
     }
 /** #nolts */
         if (new URL(location.href).searchParams.get("pw") != "3473473639574279") {
             return
         }
-    	window.ateGame = new Game()
-        window.ATEGame = Game
-        $.extend(Game, {Queue, Battle, Enemy})
+        var queue = new Queue()
+        window.queue = queue
+    	window.ateGame = new RootGame(queue)
+        window.ATEGame = RootGame
+        $.extend(RootGame, {Queue, Battle, Enemy})
 /** #endnolts */
 /* #ltsonly #soloonly {
-        var game = new Game()
+        var game = new RootGame(new Queue())
 } */
     	document.title = "游玩 Extend Air Ticket"
         $("#version").html(version)
 // @ts-ignore
-})(jQuery, ateData, "2.14.0/** #nolts */ Beta/** #endnolts */")
+})(jQuery, ateData, "2.14.2/** #nolts */ Beta/** #endnolts */")
