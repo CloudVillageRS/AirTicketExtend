@@ -1,11 +1,13 @@
 
-class Game {
-    
+class RootGame {
+    constructor(queue)
 }
+class Queue {}
 
 declare global {
-    var ateGame: Game;
-    var ATEGame = Game;
+    var ateGame: RootGame;
+    var ATEGame = RootGame;
+    var queue: Queue
 }
 
 

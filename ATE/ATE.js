@@ -11,6 +11,8 @@
     const LOVECA = 2
     const FRIENDLY_SPEAR = 3
     const BLACK_SKIRT = 4
+    const HEALTH_GEM = 14
+    const CHAOS_SHIELD = 23
     const SW0RD = 24
     const FROZEN_BREAD = 34
     const H_3RD_ANN_CAKE = 44
@@ -252,6 +254,7 @@
             this.$tags = $(".ate-settings-tag")
             this.$pages = $(".ate-settings-page")
             this.index = 0
+            console.log(1)
             this.$tags.each((index, tag) => {
                 let $tag = $(tag)
                 $tag.on("click", () => {
@@ -277,6 +280,7 @@
                     $btn.html(val ? "是" : "否").toggleClass("ate-button-on")
                 })
             }
+            console.log(2)
             $("#ate-settings-clear").on("click", () => {
                 delete localStorage.gameData
                 this.game.notify("存档已清除！")
@@ -459,6 +463,7 @@
          */
         constructor(queue, cGame) {
             this.queue = queue
+            /** @type {ChapterGame} */
             this.chapterGame = (this instanceof ChapterGame) ? this : cGame
             this.dead = false
         }
@@ -528,6 +533,32 @@
                 this.chapterGame.history.push(msg)
                 return deferred
             })
+        }
+        /**
+         * 
+         * @param {JQuery<HTMLElement>} $ele
+         * @param {string} type
+         * @param {boolean} [once]
+         */
+        waitTriggerEvent($ele, type, once) {
+            var deferred = $.Deferred();
+            if (once) {
+                $ele.one(type, () => deferred.resolve())
+            } else {
+                $ele.on(type, () => deferred.resolve())
+            }
+            this.wait(() => deferred)
+            return this
+        }
+        /**
+         * 
+         * @param {JQuery<HTMLElement>} $ele 
+         */
+        waitFadeOutEle($ele) {
+            var deferred = $.Deferred()
+            this.wait(() => $ele.fadeOut(() => deferred.resolve()))
+            this.wait(() => deferred)
+            return this
         }
     }
     // 不用public static field，兼容性不好（
@@ -666,12 +697,16 @@
             this.tutorial = battleData.tutorial
             /** 是否有星空伴随 */
             this.withXk = battleData.withXk
+            /** 是否有昵称伴随 */
+            this.withNc = battleData.withNc
+            /** 是否有SO伴随 */
+            this.withSo = battleData.withSo
             /** 是否可使用几何八面体 */
             this.octahedron = battleData.octahedron
             /** 治疗魔法消耗的MP */
-            this.cureMagicCost = this.chapterGame.has(14) ? 50 : 30
+            this.cureMagicCost = this.chapterGame.has(HEALTH_GEM) ? 50 : 30
             /** 治疗魔法增加的HP */
-            this.cureMagicPlus = this.chapterGame.has(14) ? 80 : 40
+            this.cureMagicPlus = this.chapterGame.has(HEALTH_GEM) ? 80 : 40
             /** div class="ate-battle" */
             this.$element = game.$battle
             /** 决定战斗完成后队列转交给哪个进程 */
@@ -695,6 +730,9 @@
                 let enemyData = data.enemy[each]
                 let thisEnemy = new Enemy(enemyData, this)
                 this.enemy.push(thisEnemy)
+            }
+            for (let each of this.enemy) {
+                each.init()
             }
             
             this.zeroTable = new Table("ate-zero-table", "Zero").appendTo(this.$element)
@@ -761,6 +799,8 @@
             this.defense = false
             /** 是否启用战斗魔法 */
             this.battleMagic = false
+            this.ncChipMagic = 0
+            this.soSweaterMagic = 0
             /** 机械木马是否发动重火力攻击 */
             this.heavyAttack = false
             /** 本回合需要攻击的次数（散弹攻击等设定为2） */
@@ -777,7 +817,7 @@
                     this.chapterGame.execute(command, this)
                 }
             }
-            if (this.chapterGame.armor && this.chapterGame.armor.id === 23) { // 混乱护盾
+            if (this.chapterGame.armor && this.chapterGame.armor.id === CHAOS_SHIELD) { // 混乱护盾
                 this.chapterGame.execute("health + [3,20]")
             }
             for (let enemy of this.enemy) {
@@ -980,9 +1020,16 @@
             this.wait(200)
             /** 呈现给用户的可用魔法 */
             let magics = [`治疗魔法（${this.cureMagicCost}）`, "战斗魔法（70）", `黑暗魔法（${this.black ? "100" : "？"}）`]
+            let methods = []
             if (this.octahedron) { // 如果 几何八面体 enabled
                 magics.push(`几何八面体（${this.magic}）`)
+                methods.push(this.useOctahedron)
             }
+            if (this.withNc) {
+                magics.push(`${this.chapterGame.ncChip === 1 ? '万能' : '喵叫'}（40）`)
+                methods.push(this.useNcChip)
+            }
+
             this.chapterGame.waitChoose(this, magics, (magicType, process, rechoose) => {
                 switch (magicType) {
                     case 0:
@@ -1019,13 +1066,8 @@
                         }
                         break;
                     case 3:
-                        if (this.enemy[0].id === 9) {
-                            this.chapterGame.virtually(200)
-                        }
-                        let currentMagic = this.magic
-                        this.magic = 0
-                        this.enemy[0].health -= currentMagic / 2 // 未定，有名说团战打自己，对此我表示不认同（
-                        process.log(`你选择了几何八面体，对【${this.enemy[0].name}】造成${currentMagic / 2}点伤害！`)
+                    case 4:
+                        methods[magicType - 3].call(this, process, rechoose)
                         break;
                     default:
                         throw new Error("非法输入")
@@ -1085,11 +1127,59 @@
             })
         }
         /**
+         * @param {Process} process
+         * @param {any} rechoose
+         */
+        useOctahedron(process, rechoose) {
+            if (this.enemy[0].id === 9) {
+                this.chapterGame.virtually(200)
+            }
+            let currentMagic = this.magic
+            this.magic = 0
+            this.enemy[0].health -= currentMagic / 2 // 未定，有名说团战打自己，对此我表示不认同（
+            process.log(`你选择了几何八面体，对【${this.enemy[0].name}】造成${currentMagic / 2}点伤害！`)
+        }
+        /**
+         * 
+         * @param {Process} process
+         * @param {() => boolean} rechoose
+         */
+        useNcChip(process, rechoose) {
+            if (this.magic < 40) {
+                process.log("你的魔法值不够")
+                return rechoose()
+            }
+            if (this.chapterGame.ncChip === 0) {
+                process.log("你使用了猫叫芯片!敌人发出了喵喵叫的声音")
+                if (Math.random() < 0.2) {
+                    process.log("喵喵喵喵喵喵喵喵喵喵喵喵喵喵喵喵喵喵喵喵喵喵喵喵喵（")
+                }
+                this.ncChipMagic = 1
+                this.enemy.forEach(e => {
+                    let orig = e.attack
+                    e.attack = Math.floor(e.attack / 2)
+                    this.roundEnd(() => e.attack = orig)
+                })
+            } else if (this.chapterGame.ncChip === 1) {
+                process.log("你使用了万能芯片！请选择它的效果")
+                this.chapterGame.waitChoose(process, ["使对方本回合ATT变为原来的五分之一", "使对方本回合受到伤害增加", "使对方本回合只能打出相同的字母"], ch => {
+                    if (ch === 0) {
+                        this.enemy.forEach(e => {
+                            let orig = e.attack
+                            e.attack = Math.floor(e.attack / 5)
+                            this.roundEnd(() => e.attack = orig)
+                        })
+                    }
+                    this.ncChipMagic = ch + 2
+                })
+            }
+        }
+        /**
          * 战斗环节输入框生成
          */
         fightInput(enemyIndex = 0) {
             if (enemyIndex >= this.enemy.length) {
-                return;
+                return this.finishRound();
             }
             if (this.enemy[enemyIndex].dead) {
                 return this.fightInput(enemyIndex + 1) // 直到找到没死的敌人
@@ -1143,10 +1233,8 @@
                 baseEnemy = 0
             }
             var same; // 拉低复用性，差评！
-            if (self && self.enemy[0].id === 4) {
-                if (self.rounds % 4 === 3) {
-                    same = Math.floor(Math.random() * 4)
-                }
+            if (self && (self.enemy[0].id === 4 && self.rounds % 4 == 3 || self.ncChipMagic == 4)) {
+                same = Math.floor(Math.random() * 4)    
             }
             let hurt = 0, harm = 0, letters = ""
             const $interface = game.root.$interface
@@ -1155,21 +1243,22 @@
                 if (charThis == charEnemy - 1 || charThis == 3 && charEnemy == 0) {
                     let attack = baseThis
                     let weapon = game.weapon
-                    let defence = enemyDefence
+                    let edefence = enemyDefence
                     if (!defense && weapon && weapon.magic) {
                         if (self.magic >= game.weapon.magic) {
                             self.magic -= game.weapon.magic
                             if (weapon.id === DESTROYER_LASER) {
-                                defence = 0
+                                edefence = 0
                             }
                         } else {
                             attack -= game.weapon.attack
                         }
                     }
-                    attack -= defence
+                    attack -= edefence
                     if (attack < 0 || defense) {
                         attack = 0
                     }
+                    console.log("sigatt", attack, "att", attack, "sigedef", edefence, "bthis", baseThis, "g.att", game.attack, "edef", enemyDefence)
                     harm += attack
                     Battle.charWithColor(str.charAt(i), $interface, defense ? 0 : 1, false, i * 10 + 30 + "%")
                     Battle.charWithColor(letter, $interface, -1, true, i * 10 + 30 + "%")
@@ -1267,14 +1356,17 @@
                     this.chapterGame.attack, // 己方单伤害
                     enemy.attack, // 敌方原始伤害
                     this.defense, // 是否防御
-                    enemyDefence,
                     this.chapterGame.defence, // 己方防御值
+                    enemyDefence,
                     this.chapterGame,
                     BREAK_RATES[enemy.id] || 0, // 破甲率
                     this
                     )
                 if (this.frozenBreadUsed || this.chapterGame.dodgeRate && Math.random() <= this.chapterGame.dodgeRate) {
                     hurt = 0 // 闪避/冰冻面包直接0伤
+                }
+                if (this.ncChipMagic === 3) { // 万能芯片，选B
+                    harm *= 2
                 }
                 this.log(`你的攻击是${str}，对方的攻击是${letters}`)
                 if (enemyDefense) {
@@ -1300,9 +1392,12 @@
                     this.log("你朝炮筒攻打过去，机械木马开始松动了")
                     enemy.gunHealth--
                 }
-                if (this.battleMagic) {
-                    this.chapterGame.attack -= 5
-                }
+            }
+            this.finishRound()
+        }
+        finishRound() {
+            if (this.battleMagic) {
+                this.chapterGame.attack -= 5
             }
             for (let each of this.roundEndCallback) {
                 each.call(this.chapterGame)
@@ -1331,8 +1426,7 @@
         // @ts-ignore
         set chaos(val) {
             this._chaos = val
-            // @ts-ignore
-            this.enemyTable.chaos.set(val)
+            this.enemy[0].table.chaos.set(val)
             if (this.chaos >= 100) {
                 this.log('混沌盘旋着毁灭了战场，你胜利了。')
                 this.chapterGame.virtually(12132)
@@ -1392,6 +1486,8 @@
             this.dead = false
             
 
+        }
+        init() {
             switch (this.id) {
                 case 13: // 机械木马
                     this.table.add("gunHealth", "炮筒", 5, "orange", true)
@@ -1660,6 +1756,8 @@
                 this.cm = this.storage.cm
                 this.shops = this.storage.shops || []
                 this.virtualExperience = this.storage.virtual || []
+                this.ncChip = this.storage.ncChip || 0
+                this.soSweater = this.storage.soSweater || 0
             } else {
                 this.storage = {}
                 this.health = data[this.chapter].maxHealth
@@ -1684,6 +1782,8 @@
                  * @type {number[]}
                  */
                 this.virtualExperience = []
+                this.ncChip = 0
+                this.soSweater = 0
             }
             if (this.shops.length > 0) {
                 this.$shopMagic.show()
@@ -1787,6 +1887,9 @@
          */
         // @ts-ignore
         set health(val) {
+            if (this._health < 0 && val < 0) {
+                return;
+            }
             if (val > data[this.chapter].maxHealth) {
                 val = data[this.chapter].maxHealth
             } else if (val <= 0) {
@@ -2430,7 +2533,9 @@
                 cm: this.cm,
                 stackables: stackables,
                 virtual: this.virtualExperience,
-                chapter: this.chapter
+                chapter: this.chapter,
+                ncChip: this.ncChip,
+                soSweater: this.soSweater
             }
             this.saved = false
         }
@@ -2820,15 +2925,12 @@
                     $white.remove()
                     $sw0rd.fadeOut(1000)
                 })
-            var enterInterfaceDeferred = $.Deferred()
+            
             var $enter = $("<div/>")
                 .addClass("ate-enter")
                 .html("Extend Air Ticket<div>Click to start</div>")
                 .insertAfter(this.$interface)
-                .one("click", () => {
-                    enterInterfaceDeferred.resolve()
-                })
-            this.wait(() => enterInterfaceDeferred)
+            this.waitTriggerEvent($enter, "click", true)
                 .wait(() => $enter.fadeOut(1000))
                 .wait(1000)
                 .wait(() => $enter.remove())
@@ -2926,13 +3028,13 @@
             var $chapters = $("<div/>").addClass("ate-chapters").appendTo(this.$interface)
             for (let/** @type {1|2|3|4|5} */ i = 1; i <= 5; i++) {
                 let $chapter = $("<div/>").addClass("ate-chapter").appendTo($chapters)
-                if (data[i] && i == this.chapter) { // 若数据中有该章节
-                    $chapter.html("Chapter " + i).on("click", () => {
-                        /** @type {1|2|3|4|5} */
-                        $chapters.fadeOut(() => {
-                            $chapters.remove()
-                            this.chapterGame = new ChapterGame(this.queue, this, this.chapter)
-                        })
+                if (data[i] && i == this.chapter) { // 若数据中有该章节且达到该章节
+                    $chapter.html("Chapter " + i)
+                    this.waitTriggerEvent($chapter, "click")
+                    this.waitFadeOutEle($chapter)
+                    this.wait(() => {
+                        $chapters.remove()
+                        this.chapterGame = new ChapterGame(this.queue, this, this.chapter)
                     })
                 } else if (data[i] && i < this.chapter) {
                     $chapter.addClass("ate-chapter-passed").html("passed")
@@ -2975,4 +3077,4 @@
     	document.title = "游玩 Extend Air Ticket"
         $("#version").html(version)
 // @ts-ignore
-})(jQuery, ateData, "2.14.2/** #nolts */ Beta/** #endnolts */")
+})(jQuery, ateData, "2.14.4/** #nolts */ Beta/** #endnolts */")
