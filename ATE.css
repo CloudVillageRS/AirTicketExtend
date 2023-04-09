@@ -32,6 +32,11 @@ html, body {
 	box-sizing: border-box;
 }
 
+.ate-click-to-continue {
+	font-size: 50%;
+}
+
+
 .ate-equipments {
 	width: 13em;
 }
@@ -113,10 +118,20 @@ html, body {
 	transition: 0.5s ease-in-out background-color;
 	cursor: pointer;
     border-radius: 7px;
+	background-position-y: center;
+	background-position-x: 1em;
+	background-repeat: no-repeat;
+	background-size: contain;
     /* border: 1px cyan solid; */
 }
 .ate-choice:hover {
 	background-color: #80c0e8dd;
+}
+.ate-choice-disabled {
+	background-color: #999999;
+}
+.ate-choice-disabled:hover {
+	background-color: #888888
 }
 
 .ate-battle {
@@ -164,6 +179,7 @@ html, body {
 	width: 100%;
 	left: 0;
 	position: absolute;
+	border-radius: inherit;
 	opacity: 30%;
 	transition: 0.7s ease-out height;
 }
@@ -322,6 +338,10 @@ html, body {
 	background-color: #3e6a;
 }
 
+.ate-button.ate-button-disabled {
+	background-color: #777;
+}
+
 .ate-notification {
 	position: absolute;
 	top: 4em;
@@ -395,6 +415,12 @@ html, body {
 	font-size: 0.2em;
 }
 
+.ate-tips {
+	position: fixed;
+	bottom: 4em;
+	left: 4em;
+}
+
 #author {
 	position: absolute;
 	right: 4px;
@@ -440,14 +466,15 @@ html, body {
 		width: 7.5em;
 		padding: 0.4em;
 		margin-top: 4px;
+		margin-right: 0
 	}
 	.ate-choices {
 		position: absolute;
 		width: 9em;
 		max-height: 10em;
-		overflow-y: auto;
 		right: 0;
 		bottom: 8px;
+		overflow: hidden;
 		padding-left: 0.2em;
 		background-color: #f8f9fa;
 		border-top-left-radius: 6px;
@@ -455,12 +482,21 @@ html, body {
 		grid-column: 3 / 4;
 		grid-row: 2 / 3
 	}
+	.ate-choices-inner {
+		transition: 0.5s ease-in height;
+		height: 0;
+		width: 9em;
+		overflow-y: auto;
+		padding-right: 1em;
+		padding-bottom: 1em
+	}
 	.ate-battle {
 		overflow-x: auto;
 		display: none;
 	}
 	.ate-input {
-		display: none
+		display: none;
+		overflow: auto
 	}
 	.ate-interface-expanded .ate-messages {
 		grid-column: 1 / 2;
