@@ -5,10 +5,23 @@
         <link rel="stylesheet" type="text/css" href="/ATE.css">
         <link type="shortcut icon" href="/favicon.ico">
         <script src="https://code.jquery.com/jquery-latest.js"></script>
-        <script src="/json.min.js"></script>
+        <style>
+            body {
+                background: aliceblue;
+            }
+        </style>
+      
     </head>
     <body>
-        维护中，敬请期待！
+        <div>
+            Extend Air Ticket域名已迁移到<a href="http://eat.cvserver.top">http://eat.cvserver.top</a>。<br>
+            复制下面的文本以转移存档。
+            <textarea id="archive">
+            </textarea>
+        </div>
+        <script>
+            $(function(){if (localStorage.gameData) {$("#archive").val(localStorage.gameData)}});
+        </script>
     </body>
 </html>
 <!-- Extend Air Ticket 2.14+ -->
